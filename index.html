@@ -1356,6 +1356,7 @@
         a.click();
       });
       let tipStatus = false;
+      let tipTx = "";
       document
         .getElementById("tipButton")
         .addEventListener("click", async () => {
@@ -1374,6 +1375,7 @@
             tx.to(tippingAddress, parseInt(tipAmount));
             tx.change(addressFrom);
             tx.sign(privateKey);
+            tipTx = tx;
             const txString = tx.toString();
             const txStringP = document.createElement("p");
             const txStringDescription = document.createElement("p");
@@ -1399,17 +1401,7 @@
               return;
             }
             document.getElementById("tipButton").innerHTML = "Broadcasting...";
-            const tipAmount = document.getElementById("tipAmount").value;
-            const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
-            const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-            const addressFrom = bsv.Address.fromPublicKey(publicKey);
-            const utxos = await getUnspentUtxos(addressFrom);
-            const tx = new bsv.Transaction().from(utxos);
-            tx.feePerKb(15);
-            tx.to(tippingAddress, parseInt(tipAmount));
-            tx.change(addressFrom);
-            tx.sign(privateKey);
-            const txid = await broadast(tx);
+            const txid = await broadast(tipTx);
             document.getElementById(
               "tipResult"
             ).innerHTML = `Thank you so much! We appreciate the love. </br>Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
