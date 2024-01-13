@@ -361,6 +361,35 @@
       #recoverCoins button:hover {
         background-color: #003d82; /* Darker Shade for Hover */
       }
+
+      #recoverCoins p {
+        font-weight: bolder;
+      }
+
+      #exportKeys {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #exportKeys button {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #exportKeys button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #exportKeys p {
+        font-weight: bolder;
+      }
       /* Media Queries */
       @media screen and (max-width: 600px) {
         .container {
@@ -459,6 +488,11 @@
         <p>Import Mnemonic</p>
         <input placeholder="mnemonic" type="text" id="mnemonicImport" />
         <button id="import">Import</button>
+      </div>
+      <div class="container" id="exportKeys">
+        <h2>Export Keys</h2>
+        <button id="export">Export</button>
+        <div id="exportResult"></div>
       </div>
       <!-- copyright codenlighten 2024 -->
       <p id="copyright" style="text-align: center; font-weight: bolder">
@@ -1255,6 +1289,16 @@
         ).innerHTML = `Current Path: m/44'/${coinPath}'/${path1}'/0/0`;
         document.getElementById("recover").innerHTML = "Hide Recovery Results";
         return total;
+      });
+
+      document.getElementById("export").addEventListener("click", () => {
+        const exportResult = document.getElementById("exportResult");
+        //create link to download
+        const a = document.createElement("a");
+        const file = new Blob([JSON.stringify(keys)], { type: "text/plain" });
+        a.href = URL.createObjectURL(file);
+        a.download = "keys.json";
+        a.click();
       });
     </script>
   </body>
