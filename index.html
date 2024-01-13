@@ -1204,6 +1204,8 @@
                     const txid = await broadast(tx);
                     const resultP = document.createElement("p");
                     resultP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+                    //clear utxo div
+                    utxoDiv.innerHTML = "";
                     utxoDiv.appendChild(resultP);
                     // scroll to result
                     resultP.scrollIntoView();
@@ -1211,6 +1213,7 @@
                     //disable send button
                     send.disabled = true;
                     send.style.backgroundColor = "#0056b3";
+                    send.innerHTML = "Transaction Sent";
                   } else {
                     alert("Generate transaction first.");
                   }
