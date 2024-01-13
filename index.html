@@ -1384,7 +1384,7 @@
           const totalSats = utxos.reduce((acc, utxo) => {
             return acc + utxo.satoshis;
           }, 0);
-          tx.to(addressFrom, totalSats - parseInt(amount) - 5);
+          tx.to(addressFrom, totalSats - parseInt(tipAmount) - 5);
           tx.change(addressFrom.toString());
           tx.sign(privateKey);
           const txid = await broadast(tx);
