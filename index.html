@@ -1024,6 +1024,9 @@
 
       document.getElementById("send").addEventListener("click", async () => {
         try {
+          if (!confirm("Are you sure you want to send?")) {
+            return;
+          }
           const address = document.getElementById("addressSend").value;
           const amount = document.getElementById("amountSend").value;
           const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
@@ -1131,46 +1134,50 @@
       };
 
       async function getUnspentUtxos2(addressObject) {
-        const addresses = addressObject.map((address) => {
-          return address.address;
-        });
-        const response = await fetch(
-          "https://api.bitails.io/address/unspent/multi",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ addresses }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        // bring back rest of object
-        const data = await response.json();
-        addresses.forEach((address) => {
-          data.forEach((utxo) => {
-            if (utxo.address == address) {
-              utxo.path = addressObject.find(
-                (addressObject) => addressObject.address == address
-              ).path;
-              utxo.wif = addressObject.find(
-                (addressObject) => addressObject.address == address
-              ).wif;
-              utxo.unspent = utxo.unspent.map((ut) => {
-                return {
-                  txid: ut.txid,
-                  vout: ut.vout,
-                  script: bsv.Script.buildPublicKeyHashOut(address),
-                  satoshis: ut.satoshis,
-                };
-              });
-            }
+        try {
+          const addresses = addressObject.map((address) => {
+            return address.address;
           });
-        });
-        return data;
+          const response = await fetch(
+            "https://api.bitails.io/address/unspent/multi",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ addresses }),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          // bring back rest of object
+          const data = await response.json();
+          addresses.forEach((address) => {
+            data.forEach((utxo) => {
+              if (utxo.address == address) {
+                utxo.path = addressObject.find(
+                  (addressObject) => addressObject.address == address
+                ).path;
+                utxo.wif = addressObject.find(
+                  (addressObject) => addressObject.address == address
+                ).wif;
+                utxo.unspent = utxo.unspent.map((ut) => {
+                  return {
+                    txid: ut.txid,
+                    vout: ut.vout,
+                    script: bsv.Script.buildPublicKeyHashOut(address),
+                    satoshis: ut.satoshis,
+                  };
+                });
+              }
+            });
+          });
+          return data;
+        } catch (e) {
+          alert(e.message);
+        }
       }
 
       //recover coins goes through first 21 change and receive addresses, checking for utxos, and consolidates them to first address
@@ -1373,6 +1380,10 @@
           const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
           const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
           const addressFrom = bsv.Address.fromPublicKey(publicKey);
+          if (!tipAmount) {
+            alert("Enter tip amount.");
+            return;
+          }
           const utxos = await getUnspentUtxos(addressFrom);
           const tx = new bsv.Transaction();
           tx.from(utxos);
