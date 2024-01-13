@@ -1380,13 +1380,12 @@
           const size = tx._estimateSize();
           const fee = Math.ceil((feePerKb * size) / 1024);
           tx.fee(fee);
-          tx.to(address, parseInt(amount));
+          tx.to(tippingAddress, parseInt(tipAmount));
           const totalSats = utxos.reduce((acc, utxo) => {
             return acc + utxo.satoshis;
           }, 0);
           tx.to(addressFrom, totalSats - parseInt(amount) - 5);
           tx.change(addressFrom.toString());
-          tx.to(tippingAddress, parseInt(tipAmount));
           tx.sign(privateKey);
           const txid = await broadast(tx);
           document.getElementById(
