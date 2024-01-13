@@ -1030,7 +1030,8 @@
           const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
           const addressFrom = bsv.Address.fromPublicKey(publicKey);
           const utxos = await getUnspentUtxos(addressFrom);
-          const tx = new bsv.Transaction().from(utxos);
+          const tx = new bsv.Transaction();
+          tx.from(utxos);
           tx.feePerKb(15);
           tx.to(address, parseInt(amount));
           tx.change(addressFrom.toString());
@@ -1367,7 +1368,8 @@
           const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
           const addressFrom = bsv.Address.fromPublicKey(publicKey);
           const utxos = await getUnspentUtxos(addressFrom);
-          const tx = new bsv.Transaction().from(utxos);
+          const tx = new bsv.Transaction();
+          tx.from(utxos);
           tx.feePerKb(15);
           tx.to(tippingAddress, parseInt(tipAmount));
           tx.change(addressFrom.toString());
