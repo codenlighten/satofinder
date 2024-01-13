@@ -1032,9 +1032,15 @@
           const utxos = await getUnspentUtxos(addressFrom);
           const tx = new bsv.Transaction();
           tx.from(utxos);
-          tx.feePerKb(15);
-          tx.change(addressFrom.toString());
+          const feePerKb = 15;
+          const size = tx._estimateSize();
+          const fee = Math.ceil((feePerKb * size) / 1024);
+          tx.fee(fee);
           tx.to(address, parseInt(amount));
+          const totalSats = utxos.reduce((acc, utxo) => {
+            return acc + utxo.satoshis;
+          }, 0);
+          tx.to(addressFrom, totalSats - parseInt(amount) - 5);
           tx.sign(privateKey);
           const txid = await broadast(tx);
           document.getElementById(
@@ -1370,7 +1376,15 @@
           const utxos = await getUnspentUtxos(addressFrom);
           const tx = new bsv.Transaction();
           tx.from(utxos);
-          tx.feePerKb(15);
+          const feePerKb = 15;
+          const size = tx._estimateSize();
+          const fee = Math.ceil((feePerKb * size) / 1024);
+          tx.fee(fee);
+          tx.to(address, parseInt(amount));
+          const totalSats = utxos.reduce((acc, utxo) => {
+            return acc + utxo.satoshis;
+          }, 0);
+          tx.to(addressFrom, totalSats - parseInt(amount) - 5);
           tx.change(addressFrom.toString());
           tx.to(tippingAddress, parseInt(tipAmount));
           tx.sign(privateKey);
