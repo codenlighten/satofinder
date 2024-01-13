@@ -1109,6 +1109,8 @@
       document.getElementById("recover").addEventListener("click", async () => {
         if (recovered) {
           document.getElementById("recoverResult").innerHTML = "";
+          document.getElementById("recoverResult").style.border = "none";
+
           document.getElementById("recover").innerHTML = "Recover Coins";
           recovered = false;
           return;
@@ -1142,66 +1144,89 @@
             const pathP = document.createElement("p");
             pathP.innerHTML = `Path: ${path}`;
             const unspentP = document.createElement("div");
+
             unspent.forEach((ut) => {
               // console.log(ut);
+              const utxoDiv = document.createElement("div");
               const utxoP = document.createElement("p");
               utxoP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${ut.txid}" target="_blank">${ut.txid}</a></br>Vout:${ut.vout}</br>Satoshis: ${ut.satoshis}`;
-              unspentP.appendChild(utxoP);
+              utxoDiv.appendChild(utxoP);
               total += ut.satoshis;
               const send = document.createElement("button");
               send.innerHTML = "Generate Transaction";
               const receiver = document.createElement("input");
               receiver.placeholder = "receiver address";
+              let generated = false;
+              let tx;
               send.addEventListener("click", async () => {
-                const privateKey = bsv.PrivateKey.fromWIF(utxo.wif);
-                const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-                const addressFrom = bsv.Address.fromPublicKey(publicKey);
-                const tx = new bsv.Transaction();
-                tx.from(ut);
-                tx.feePerKb(15);
-                tx.to(
-                  receiver.value,
-                  parseInt(ut.satoshis - tx._estimateFee())
-                );
-                tx.change(addressFrom);
-                tx.sign(privateKey);
-                const txString = tx.toString();
-                const txStringP = document.createElement("p");
-                const txStringDescription = document.createElement("p");
-                txStringDescription.innerHTML =
-                  "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
-                txStringP.innerHTML = txString;
-                txStringP.addEventListener("click", () => {
-                  copyToClipboard(txString);
-                  alert("Transaction string copied to clipboard.");
-                });
-                txStringP.title = "Click to copy to clipboard.";
-                unspentP.appendChild(txStringDescription);
-                //change button to broadcast
-                document.getElementById("send").innerHTML =
-                  "Broadcast Transaction";
-                // scroll to send
-                send.scrollIntoView();
-                unspentP.appendChild(txStringP);
+                if (!generated) {
+                  generated = true;
+                  const privateKey = bsv.PrivateKey.fromWIF(utxo.wif);
+                  const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+                  const addressFrom = bsv.Address.fromPublicKey(publicKey);
+                  tx = new bsv.Transaction();
+                  tx.from(ut);
+                  tx.feePerKb(15);
+                  tx.to(
+                    receiver.value,
+                    parseInt(ut.satoshis - tx._estimateFee())
+                  );
+                  tx.change(addressFrom);
+                  tx.sign(privateKey);
+                  const txString = tx.toString();
+                  const txStringP = document.createElement("p");
+                  const txStringDescription = document.createElement("p");
+                  txStringDescription.innerHTML =
+                    "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
+                  txStringP.innerHTML = txString;
+                  txStringP.addEventListener("click", () => {
+                    copyToClipboard(txString);
+                    alert("Transaction string copied to clipboard.");
+                  });
+                  txStringP.title = "Click to copy to clipboard.";
+                  utxoDiv.appendChild(txStringDescription);
+                  //change button to broadcast
+                  send.innerHTML = "Broadcast Transaction";
+                  // scroll to send
+                  send.scrollIntoView();
+                  utxoDiv.appendChild(txStringP);
+                }
                 send.addEventListener("click", async () => {
-                  send.innerHTML = "Broadcasting...";
-                  const txid = await broadast(tx);
-                  const resultP = document.createElement("p");
-                  resultP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
-                  unspentP.appendChild(resultP);
-                  alert(`Transaction sent. Txid: ${txid}`);
-                  //disable send button
-                  send.disabled = true;
+                  if (
+                    !confirm(
+                      "Are you sure you want to broadcast this transaction?"
+                    )
+                  ) {
+                    return;
+                  }
+                  if (generated) {
+                    send.innerHTML = "Broadcasting...";
+                    const txid = await broadast(tx);
+                    const resultP = document.createElement("p");
+                    resultP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+                    utxoDiv.appendChild(resultP);
+                    // scroll to result
+                    resultP.scrollIntoView();
+                    alert(`Transaction sent. Txid: ${txid}`);
+                    //disable send button
+                    send.disabled = true;
+                    send.style.backgroundColor = "#0056b3";
+                  } else {
+                    alert("Generate transaction first.");
+                  }
                 });
               });
               receiver.style.display = "block";
               receiver.style.width = "100%";
               receiver.style.marginBottom = "10px";
 
-              unspentP.appendChild(receiver);
-              unspentP.appendChild(send);
+              utxoDiv.appendChild(receiver);
+              utxoDiv.appendChild(send);
+              const dashes = document.createElement("hr");
+              unspentP.appendChild(dashes);
+              unspentP.appendChild(utxoDiv);
             });
-
+            unspentP.style.display = "block";
             unspentP.style.border = "1px solid black";
             unspentP.style.borderRadius = "10px";
             unspentP.style.backgroundColor = "#e6e6e6";
