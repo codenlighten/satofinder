@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      SatoFinder - Simplified BSV Mnemonic, Key Generation, and Coin Recovery
+    </title>
+    <!-- meta description -->
+    <!-- favicon logo.png-->
+    <link rel="icon" href="logo.png" />
+    <meta
+      name="description"
+      content="SatoFinder is a simple tool to generate BSV Mnemonic, keys, and addresses."
+    />
+    <!-- meta keywords -->
+    <meta
+      name="keywords"
+      content="BSV, Bitcoin SV, Mnemonic Generation, BSV Wallet, BSV Address, Bitcoin Tools"
+    />
+    <!-- meta author codenlighten-->
+    <meta name="author" content="codenlighten" />
+    <!-- twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:site" content="@codenlighten" />
+    <meta name="twitter:creator" content="@codenlighten" />
+    <meta
+      name="twitter:title"
+      content="EZ BSV - Generate BSV Mnemonic, Keys, and Addresses"
+    />
+    <!-- logo.png -->
+    <meta name="twitter:image" content="logo.png" />
+    <meta
+      name="twitter:description"
+      content="SatoFinder is a simple tool to generate BSV mneomnic, keys, and addresses."
+    />
+
+    <script src="https://unpkg.com/bsv@1.5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-message.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-mnemonic.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-ecies.min.js"></script>
+    <!-- montserrat -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Basic Reset */
+      /* Basic Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 16px;
+        line-height: 1.6;
+        color: #333333;
+        background-color: #ffffff;
+        padding: 20px;
+        word-wrap: break-word;
+        background-image: url("logo.png");
+      }
+
+      /* Global Styles */
+      h1,
+      h2 {
+        margin-bottom: 20px;
+        color: #0056b3; /* Example Primary Color */
+      }
+
+      p {
+        margin-bottom: 15px;
+      }
+
+      button {
+        /* display: block; */
+        margin: 15px auto;
+        padding: 12px 15px;
+        border: none;
+        border-radius: 5px;
+        background-color: #0056b3; /* Example Primary Color */
+        color: #ffffff;
+        cursor: pointer;
+        transition: background-color 0.3s;
+        width: 45%;
+        max-width: 400px;
+      }
+
+      button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      input[type="number"],
+      input[type="text"] {
+        display: inline;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+        width: 75px;
+      }
+
+      input[type="number"]:focus,
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+      #mainContainer {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        padding: 20px;
+        border: 2px solid #eab300;
+        border-radius: 5px;
+      }
+
+      .container {
+        margin-bottom: 20px;
+        padding: 20px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        background-color: #f9f9f9; /* Light Background for Container */
+        width: 100%;
+        /* max-width: 600px; */
+        word-wrap: break-word;
+        background-color: #ffffff;
+        margin: 0 auto;
+      }
+      /* mnemonic import input */
+      #mnemonicImport {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+      #title {
+        text-align: center;
+        margin-bottom: 20px;
+        text-shadow: 2px 2px 4px #000000;
+        font-size: 3rem;
+        font-weight: bolder;
+        font-family: "Montserrat", sans-serif;
+      }
+      #changePath {
+        display: inline;
+        font-weight: bolder;
+      }
+      #currentPath {
+        font-weight: bolder;
+      }
+
+      #copy {
+        display: inline;
+      }
+      #description {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 1rem;
+        font-weight: bolder;
+        font-family: "Montserrat", sans-serif;
+      }
+      #logo {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      /* send bsv */
+      #sendBsv {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+      #sendBsv p {
+        font-weight: bolder;
+      }
+      #sendBsv input {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+      #sendBsv input:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+      #sendBsv button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+      /* hover */
+      #sendBsv button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #importMnemonic {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+
+      #importMnemonic p {
+        font-weight: bolder;
+      }
+
+      #importMnemonic input {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+
+      #importMnemonic input:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+
+      #importMnemonic button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #importMnemonic button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      .buttons {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .buttons button {
+        width: 45%;
+        max-width: 400px;
+      }
+      #keys {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+      #newMnemonics {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #storeKeysLocally:hover {
+        background-color: green; /* Darker Shade for Hover */
+      }
+      #mnemonic {
+        background-color: #f9f9f9;
+        padding: 10px;
+        border-radius: 5px;
+      }
+      #mnemonic:hover {
+        cursor: pointer;
+        background-color: #cccccc;
+      }
+
+      #bsv {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 100px;
+        border: black solid 3px;
+        border-radius: 50%;
+        padding: 12px;
+        background-color: #003d82;
+        transition: transform 0.5s;
+      }
+      /* #bsv translate flip y axis when hover  and transition back when not hover */
+      #bsv:hover {
+        transform: rotateY(180deg);
+        transition: transform 0.5s;
+        background-color: #000000;
+        border: white solid 3px;
+      }
+      #bsv:hover {
+        cursor: pointer;
+      }
+
+      #signData {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+      #data {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+      #data:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+      #signData button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+      #signData button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #signature {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #verified {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #transactionHistory {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #transactionHistory button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #transactionHistory button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #transactions {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #rootIdentity {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #rootIdentity button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #rootIdentity button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #rootIdentity input {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+
+      #rootIdentity input:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+
+      #rootIdentity p {
+        font-weight: bolder;
+        display: none;
+      }
+
+      #rootIdentity #rootIdentity {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #addresses {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        /* max-width: 400px; */
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #addresses button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #addresses button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      /* kyc */
+      #registerKYC {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+      #registerKYC button {
+        display: block;
+        margin: 0 auto;
+        width: 100%;
+        max-width: 400px;
+      }
+      #registerKYC button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #registerKYC input {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+
+      #registerKYC input:focus {
+        outline: none;
+        border-color: #0056b3; /* Example Primary Color */
+      }
+
+      #registerKYC p {
+        font-weight: bolder;
+      }
+
+      #registerKYC #resultTxidKYC {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #authorizedRequest {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #authorizedRequest button {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #authorizedRequest button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #authorizedRequest p {
+        font-weight: bolder;
+      }
+
+      #authorizedRequest #resultTxidAuth {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #authorizedRequest #authorizedResult {
+        font-weight: bolder;
+        padding: 10px;
+      }
+
+      #authorizedAddresses {
+        width: 100%;
+        margin-bottom: 15px;
+        padding: 10px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        transition: border-color 0.3s;
+      }
+
+      #consolidation {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #consolidation button {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #consolidation button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+      #recoverCoins {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #recoverCoins button {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #recoverCoins button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+      /* Media Queries */
+      @media screen and (max-width: 600px) {
+        .container {
+          padding: 10px;
+        }
+        input[type="number"],
+        input[type="text"] {
+          width: 100%;
+        }
+        button {
+          display: block;
+          width: 100%;
+        }
+        #bsv {
+          display: block;
+          margin: 6px auto;
+          width: 100%;
+          max-width: 90px;
+          border: #003d82 solid 3px;
+          border-radius: 50%;
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mainContainer">
+      <img src="EZ.png" alt="" id="logo" />
+      <!-- <h1 id="title">EZ BSV Keys</h1> -->
+      <img src="bsv.png" alt="" id="bsv" />
+      <p id="description">
+        Easily generate mnemonic, private key, public key, and address for the
+        BSV blockchain. Recover Coins, and Send BSV.
+      </p>
+      <p>
+        <span id="changePath"
+          >Path: m/44'/<input
+            type="number"
+            id="coinPath"
+            min="0"
+            value="0"
+          />'/<input type="number" id="path1" min="0" value="0" />'/<input
+            type="number"
+            id="path2"
+            min="0"
+            max="1"
+            value="0"
+          />/<input type="number" id="path3" min="0" value="0" />
+        </span>
+      </p>
+      <div class="buttons">
+        <button id="nextAccount" title="Create Another Account Path">
+          Next Account
+        </button>
+        <button id="nextAddress" title="Get Another Address">
+          Next Address
+        </button>
+        <button
+          id="receiveToggle"
+          title="Choose Receive Address or Change Address"
+        >
+          Get Change (Internal) Address
+        </button>
+        <button id="reset" title="reset paths to 0">
+          RESET (Default Address)
+        </button>
+      </div>
+      <p id="currentPath"></p>
+      <!-- <button id="generate">Generate Keys</button> -->
+      <div id="keys">
+        <p title="click to copy mnemonic to clipboard" id="mnemonic"></p>
+        <p id="privateKey"></p>
+        <p id="publicKey"></p>
+        <p id="address"></p>
+        <p id="balance"></p>
+      </div>
+      <button id="newMnemonics">Generate Mnemonic</button>
+      <div class="buttons">
+        <button id="getBalance">Get Balance</button>
+        <button id="storeKeysLocally">Store Keys Locally</button>
+      </div>
+      <div id="sendBsv">
+        <p>Send BSV</p>
+        <p id="currentAddress"></p>
+        <p id="currentBalance"></p>
+        <input placeholder="address" type="text" id="addressSend" />
+        <input placeholder="amount" type="number" id="amountSend" />
+        <button id="send">Send</button>
+        <p id="resultTxid"></p>
+      </div>
+      <div class="container" id="recoverCoins">
+        <h2>Recover Coins</h2>
+        <button id="recover">Recover Coins</button>
+        <div id="recoverResult"></div>
+      </div>
+      <div id="importMnemonic">
+        <p>Import Mnemonic</p>
+        <input placeholder="mnemonic" type="text" id="mnemonicImport" />
+        <button id="import">Import</button>
+      </div>
+      <!-- copyright codenlighten 2024 -->
+      <p id="copyright" style="text-align: center; font-weight: bolder">
+        &copy; 2024 Codenlighten. All rights reserved.
+      </p>
+    </div>
+    <script>
+      const Buffer = bsv.deps.Buffer;
+      const hash = bsv.crypto.Hash;
+      const ECIES = bsv.crypto.ECIES;
+
+      let mnemonicString = "";
+      let keys = {};
+      let path = "m/44'/0'/0'/0/0";
+      let changePath = 0;
+      let accountPath = 0;
+      let bipChoice = "44";
+
+      // next receiving address
+      let index = 0;
+      let generated21 = false;
+      let history = false;
+      //clear all paths
+      document.getElementById("path1").value = 0;
+      document.getElementById("path2").value = 0;
+      document.getElementById("path3").value = 0;
+      document.getElementById("coinPath").value = 0;
+      // generate keys
+      const generateKeys = (coin = 0, p = 0, q = 0, r = 0, m = false) => {
+        path = `m/44'/${coin}'/${p}'/${q}/${r}`;
+        if (mnemonicString == "" || m) {
+          mnemonicString = bsv.Mnemonic.fromRandom().toString();
+        }
+
+        const mnemonic = bsv.Mnemonic.fromString(mnemonicString);
+        mnemonicString = mnemonic.toString();
+        const seed = mnemonic.toSeed();
+        const root = bsv.HDPrivateKey.fromSeed(seed);
+        const child = root.deriveChild(path);
+        const privateKey = child.privateKey;
+        const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+        const address = bsv.Address.fromPublicKey(publicKey);
+        keys = {
+          mnemonic: mnemonic.toString(),
+          privateKey: privateKey.toString(),
+          publicKey: publicKey.toString(),
+          address: address.toString(),
+          path: path,
+        };
+        const keysHash = hash.sha256(Buffer.from(JSON.stringify(keys)));
+        keys.keysHash = keysHash.toString("hex");
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+        return keys;
+      };
+      // generate mnemonic
+      const generateMnemonic = () => {
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3, true);
+        console.log(keys);
+        return keys.mnemonic;
+      };
+      // generate keys click
+      document.getElementById("newMnemonics").addEventListener("click", () => {
+        mnemonicString = generateMnemonic();
+        document.getElementById("mnemonic").innerHTML = mnemonicString;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        //current path
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+        // highlight store keys locally
+        document.getElementById("storeKeysLocally").disabled = false;
+        //change color of store keys locally
+        document.getElementById("storeKeysLocally").style.backgroundColor =
+          "green";
+        // store keys locally click
+      });
+
+      const getBalance = async (address) => {
+        const response = await fetch(
+          `https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`
+        );
+        const data = await response.json();
+        return data;
+      };
+
+      document
+        .getElementById("getBalance")
+        .addEventListener("click", async () => {
+          if (!keys.address) {
+            alert("Generate keys first.");
+            return;
+          }
+          if (!keys.address) {
+            if (localStorage.getItem("keys")) {
+              keys = JSON.parse(localStorage.getItem("keys"));
+            } else {
+              alert("Generate keys first.");
+              return;
+            }
+          }
+          const balance = await getBalance(keys.address);
+          console.log(balance);
+          const total = balance.confirmed + balance.unconfirmed;
+          document.getElementById("balance").innerHTML = `${total} satoshis`;
+          document.getElementById(
+            "currentBalance"
+          ).innerHTML = `${total} satoshis`;
+        });
+
+      document
+        .getElementById("storeKeysLocally")
+        .addEventListener("click", () => {
+          if (localStorage.getItem("keys")) {
+            if (!confirm("Keys already stored locally. Overwrite?")) {
+              document.getElementById("storeKeysLocally").disabled = true;
+              //change color of store keys locally
+              document.getElementById(
+                "storeKeysLocally"
+              ).style.backgroundColor = "#0056b3";
+              return;
+            }
+          }
+          localStorage.setItem("keys", JSON.stringify(keys));
+          console.log("Keys stored locally.");
+          document.getElementById("storeKeysLocally").disabled = true;
+          //change color of store keys locally
+          document.getElementById("storeKeysLocally").style.backgroundColor =
+            "#0056b3";
+          // write down mnemonic
+          alert(
+            `Keys succesfully stored on device, but it is important to write down mnemonic and store somewhere safe: ${keys.mnemonic} `
+          );
+          // scroll to top
+          document.getElementById("mainContainer").scrollIntoView();
+        });
+
+      document.getElementById("import").addEventListener("click", () => {
+        const mnemonic = document.getElementById("mnemonicImport").value;
+        if (!bsv.Mnemonic.isValid(mnemonic)) {
+          alert("Invalid mnemonic.");
+          return;
+        }
+        mnemonicString = mnemonic;
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        changePath = path3;
+        receivingPath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+
+        // store keys locally click
+        document.getElementById("storeKeysLocally").click();
+        //clear mnemonic import input
+        document.getElementById("mnemonicImport").value = "";
+      });
+
+      if (localStorage.getItem("keys")) {
+        keys = JSON.parse(localStorage.getItem("keys"));
+        mnemonicString = keys.mnemonic;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        path = keys.path;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+        document.getElementById("coinPath").value = path
+          .split("/")[2]
+          .replace("'", "");
+        document.getElementById("path1").value = path
+          .split("/")[3]
+          .replace("'", "");
+        document.getElementById("path2").value = path
+          .split("/")[4]
+          .replace("'", "");
+        document.getElementById("path3").value = path
+          .split("/")[5]
+          .replace("'", "");
+
+        if (!keys.path) {
+          keys.path = "m/44'/0'/0'/0/0";
+        }
+        path = keys.path;
+        changePath = parseInt(keys.path.split("/")[4]);
+        receivingPath = parseInt(keys.path.split("/")[3]);
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+      } else {
+        keys = generateKeys(0, 0, 0, 0);
+        changePath = 0;
+        index = 0;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+
+        // alert new keys generated
+        // store keys locally turn green
+        alert(
+          "New keys generated. Click store keys locally to store keys on device."
+        );
+        document.getElementById("storeKeysLocally").style.backgroundColor =
+          "green";
+        //scroll to store keys locally
+        document.getElementById("storeKeysLocally").scrollIntoView();
+      }
+
+      document.getElementById("path1").addEventListener("change", () => {
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const coinPath = document.getElementById("coinPath").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        index = path3;
+        changePath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+      document.getElementById("path2").addEventListener("change", () => {
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const coinPath = document.getElementById("coinPath").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        index = path3;
+        changePath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+        if (changePath == 0) {
+          document.getElementById("receiveToggle").innerHTML =
+            "Get Change (Internal) Address";
+        } else {
+          document.getElementById("receiveToggle").innerHTML =
+            "Get Receive (External) Address";
+        }
+      });
+      document.getElementById("path3").addEventListener("change", () => {
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const coinPath = document.getElementById("coinPath").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        index = path3;
+        changePath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+      document.getElementById("coinPath").addEventListener("change", () => {
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const coinPath = document.getElementById("coinPath").value;
+        const path3 = document.getElementById("path3").value;
+
+        keys = generateKeys(coinPath, path1, path2, path3);
+        index = path3;
+        changePath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+
+      const generate21Addresses = () => {
+        const addresses = [];
+        const coinPath = document.getElementById("coinPath").value;
+        for (let i = 0; i < 21; i++) {
+          const newkeys = generateKeys(coinPath, 0, changePath, i);
+          addresses.push(newkeys.address);
+        }
+        document.getElementById("path3").value = 0;
+        const path1 = document.getElementById("path1").value;
+        currentPath = `m/44'/${coinPath}'/${path1}'/${changePath}/0`;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${currentPath}`;
+        return addresses;
+      };
+
+      // next change address
+      document.getElementById("nextAddress").addEventListener("click", () => {
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        index = parseInt(index) + 1;
+        keys = generateKeys(coinPath, path1, path2, index);
+        document.getElementById("coinPath").value = coinPath;
+        document.getElementById("path1").value = path1;
+        document.getElementById("path2").value = path2;
+        document.getElementById("path3").value = index;
+        path = keys.path;
+        changePath = path2;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+      // next receiving address
+      document.getElementById("receiveToggle").addEventListener("click", () => {
+        if (changePath == 0) {
+          changePath = 1;
+          document.getElementById("path2").value = 1;
+          document.getElementById("receiveToggle").innerHTML =
+            "Get Receive (External) Address";
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          const path2 = document.getElementById("path2").value;
+          const path3 = document.getElementById("path3").value;
+          currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
+          keys = generateKeys(coinPath, path1, path2, path3);
+          document.getElementById(
+            "currentPath"
+          ).innerHTML = `Current Path: ${currentPath}`;
+          document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+          document.getElementById("privateKey").innerHTML = keys.privateKey;
+          document.getElementById("publicKey").innerHTML = keys.publicKey;
+          document.getElementById("address").innerHTML = keys.address;
+          document.getElementById("currentAddress").innerHTML = keys.address;
+
+          //change
+        } else {
+          changePath = 0;
+          document.getElementById("path2").value = 0;
+          document.getElementById("receiveToggle").innerHTML =
+            "Get Change (Internal) Address";
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          const path2 = (document.getElementById("path2").value = changePath);
+          const path3 = document.getElementById("path3").value;
+          currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
+          keys = generateKeys(coinPath, path1, path2, path3);
+          document.getElementById(
+            "currentPath"
+          ).innerHTML = `Current Path: ${currentPath}`;
+          document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+          document.getElementById("privateKey").innerHTML = keys.privateKey;
+          document.getElementById("publicKey").innerHTML = keys.publicKey;
+          document.getElementById("address").innerHTML = keys.address;
+          document.getElementById("currentAddress").innerHTML = keys.address;
+        }
+      });
+
+      document.getElementById("reset").addEventListener("click", () => {
+        document.getElementById("path1").value = 0;
+        document.getElementById("path2").value = 0;
+        document.getElementById("path3").value = 0;
+        document.getElementById("coinPath").value = 0;
+        //generate
+        keys = generateKeys(0, 0, 0, 0);
+        changePath = 0;
+        index = 0;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+
+      document.getElementById("nextAccount").addEventListener("click", () => {
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path3 = document.getElementById("path3").value;
+        const path2 = document.getElementById("path2").value;
+        accountPath = parseInt(path1) + 1;
+        keys = generateKeys(coinPath, accountPath, path2, path3);
+
+        path = keys.path;
+        index = path3;
+        changePath = path2;
+        document.getElementById("coinPath").value = coinPath;
+        document.getElementById("path1").value = accountPath;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+      });
+
+      const broadast = async (tx) => {
+        try {
+          const response = await fetch(
+            `https://api.whatsonchain.com/v1/bsv/main/tx/raw`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                txhex: tx.toString(),
+              }),
+            }
+          );
+          const data = await response.json();
+          return data;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      const getUnspentUtxos = async (address) => {
+        try {
+          const response = await fetch(
+            `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`
+          );
+          const data = await response.json();
+          console.log(data);
+          const utxos = data.map((utxo) => {
+            return {
+              txid: utxo.tx_hash,
+              vout: utxo.tx_pos,
+              script: bsv.Script.buildPublicKeyHashOut(address),
+              satoshis: utxo.value,
+            };
+          });
+          return utxos;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      document.getElementById("send").addEventListener("click", async () => {
+        try {
+          const address = document.getElementById("addressSend").value;
+          const amount = document.getElementById("amountSend").value;
+          const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
+          const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+          const addressFrom = bsv.Address.fromPublicKey(publicKey);
+          const utxos = await getUnspentUtxos(addressFrom);
+          const tx = new bsv.Transaction().from(utxos);
+          tx.feePerKb(15);
+          tx.to(address, parseInt(amount));
+          tx.change(addressFrom);
+          tx.sign(privateKey);
+          const txid = await broadast(tx);
+          document.getElementById(
+            "resultTxid"
+          ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+          console.log(txid);
+          alert(`Transaction sent. Txid: ${txid}`);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+
+      const getTxHistory = async (address) => {
+        try {
+          const response = await fetch(
+            `https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`
+          );
+          const data = await response.json();
+          // console.log(data);
+          return data;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      // copy to clipboard mnemonic if clicked
+      const copyToClipboard = (text) => {
+        const elem = document.createElement("textarea");
+        elem.value = text;
+        document.body.appendChild(elem);
+        elem.select();
+        document.execCommand("copy");
+        document.body.removeChild(elem);
+      };
+      document.getElementById("mnemonic").addEventListener("click", () => {
+        copyToClipboard(keys.mnemonic);
+        alert("Mnemonic copied to clipboard.");
+      });
+
+      const broadcast = async (tx) => {
+        try {
+          const response = await fetch(
+            `https://api.whatsonchain.com/v1/bsv/main/tx/raw`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                txhex: tx.toString(),
+              }),
+            }
+          );
+          const data = await response.json();
+          return data;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      const getTxInfo = async (txid) => {
+        try {
+          const response = await fetch(
+            `https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`
+          );
+          const data = await response.json();
+          return data;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      const consolidateUtxos = async (address) => {
+        try {
+          const utxos = await getUnspentUtxos(address);
+          console.log(utxos);
+          const tx = new bsv.Transaction().from(utxos);
+          tx.feePerKb(15);
+          tx.change(address);
+          tx.sign(bsv.PrivateKey.fromWIF(keys.privateKey));
+          const txid = await broadcast(tx);
+          console.log(txid);
+          alert(`Transaction sent. Txid: ${txid}`);
+          return txid;
+        } catch (e) {
+          alert(e.message);
+        }
+      };
+
+      async function getUnspentUtxos2(addressObject) {
+        const addresses = addressObject.map((address) => {
+          return address.address;
+        });
+        const response = await fetch(
+          "https://api.bitails.io/address/unspent/multi",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ addresses }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        // bring back rest of object
+        const data = await response.json();
+        addresses.forEach((address) => {
+          data.forEach((utxo) => {
+            if (utxo.address == address) {
+              utxo.path = addressObject.find(
+                (addressObject) => addressObject.address == address
+              ).path;
+              utxo.wif = addressObject.find(
+                (addressObject) => addressObject.address == address
+              ).wif;
+              utxo.unspent = utxo.unspent.map((ut) => {
+                return {
+                  txid: ut.txid,
+                  vout: ut.vout,
+                  script: bsv.Script.buildPublicKeyHashOut(address),
+                  satoshis: ut.satoshis,
+                };
+              });
+            }
+          });
+        });
+        return data;
+      }
+
+      //recover coins goes through first 21 change and receive addresses, checking for utxos, and consolidates them to first address
+      const totalRecoveryArray = [];
+      const recoverCoins = async () => {
+        const recoverArray = [];
+        const addresses = [];
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        for (let i = 0; i < 49; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          const newkeys = generateKeys(coinPath, path1, 0, i);
+          const newkeys2 = generateKeys(coinPath, path1, 1, i);
+          document.getElementById(
+            "recoverResult"
+          ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
+          addresses.push({
+            address: newkeys.address,
+            path: newkeys.path,
+            wif: newkeys.privateKey,
+          });
+          addresses.push({
+            address: newkeys2.address,
+            path: newkeys2.path,
+            wif: newkeys2.privateKey,
+          });
+        }
+        const utxos = await getUnspentUtxos2(addresses);
+        return utxos;
+      };
+      let recovered = false;
+      document.getElementById("recover").addEventListener("click", async () => {
+        if (recovered) {
+          document.getElementById("recoverResult").innerHTML = "";
+          document.getElementById("recover").innerHTML = "Recover Coins";
+          recovered = false;
+          return;
+        }
+        recovered = true;
+        let total = 0;
+        const utxos = await recoverCoins();
+        //add to total recovery array
+        totalRecoveryArray.push(utxos);
+        const recoverResult = document.getElementById("recoverResult");
+        recoverResult.innerHTML = "";
+        recoverResult.style.border = "none";
+        const title = document.createElement("h2");
+        if (totalRecoveryArray.length == 0) {
+          title.innerHTML = "No coins to recover.";
+        } else {
+          title.innerHTML = "Coins Found:";
+        }
+        const totalP = document.createElement("p");
+        recoverResult.appendChild(title);
+        recoverResult.appendChild(totalP);
+        totalRecoveryArray.forEach((ut) => {
+          ut.forEach((utxo) => {
+            // console.log(utxo);
+            const address = utxo.address;
+            const path = utxo.path;
+            const unspent = utxo.unspent;
+            const p = document.createElement("p");
+            const addyP = document.createElement("p");
+            addyP.innerHTML = `Address: ${address}`;
+            const pathP = document.createElement("p");
+            pathP.innerHTML = `Path: ${path}`;
+            const unspentP = document.createElement("div");
+            unspent.forEach((ut) => {
+              // console.log(ut);
+              const utxoP = document.createElement("p");
+              utxoP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${ut.txid}" target="_blank">${ut.txid}</a></br>Vout:${ut.vout}</br>Satoshis: ${ut.satoshis}`;
+              unspentP.appendChild(utxoP);
+              total += ut.satoshis;
+              const send = document.createElement("button");
+              send.innerHTML = "Generate Transaction";
+              const receiver = document.createElement("input");
+              receiver.placeholder = "receiver address";
+              send.addEventListener("click", async () => {
+                const privateKey = bsv.PrivateKey.fromWIF(utxo.wif);
+                const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+                const addressFrom = bsv.Address.fromPublicKey(publicKey);
+                const tx = new bsv.Transaction();
+                tx.from(ut);
+                tx.feePerKb(15);
+                tx.to(
+                  receiver.value,
+                  parseInt(ut.satoshis - tx._estimateFee())
+                );
+                tx.change(addressFrom);
+                tx.sign(privateKey);
+                const txString = tx.toString();
+                const txStringP = document.createElement("p");
+                const txStringDescription = document.createElement("p");
+                txStringDescription.innerHTML =
+                  "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
+                txStringP.innerHTML = txString;
+                txStringP.addEventListener("click", () => {
+                  copyToClipboard(txString);
+                  alert("Transaction string copied to clipboard.");
+                });
+                txStringP.title = "Click to copy to clipboard.";
+                unspentP.appendChild(txStringDescription);
+                //change button to broadcast
+                send.innerHTML = "Broadcast Transaction";
+                // scroll to send
+                send.scrollIntoView();
+                unspentP.appendChild(txStringP);
+                send.addEventListener("click", async () => {
+                  send.innerHTML = "Broadcasting...";
+                  const txid = await broadast(tx);
+                  const resultP = document.createElement("p");
+                  resultP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+                  unspentP.appendChild(resultP);
+                  alert(`Transaction sent. Txid: ${txid}`);
+                  //disable send button
+                  send.disabled = true;
+                });
+              });
+              receiver.style.display = "block";
+              receiver.style.width = "100%";
+              receiver.style.marginBottom = "10px";
+
+              unspentP.appendChild(receiver);
+              unspentP.appendChild(send);
+            });
+
+            unspentP.style.border = "1px solid black";
+            unspentP.style.borderRadius = "10px";
+            unspentP.style.backgroundColor = "#e6e6e6";
+            unspentP.style.width = "100%";
+            unspentP.style.padding = "10px";
+            const breaker = document.createElement("br");
+            const dashes = document.createElement("hr");
+            recoverResult.appendChild(dashes);
+            recoverResult.appendChild(pathP);
+            recoverResult.appendChild(addyP);
+            recoverResult.appendChild(unspentP);
+            recoverResult.appendChild(breaker);
+          });
+        });
+        recoverResult.style.display = "block";
+        totalP.innerHTML = `Total: ${total} satoshis`;
+        recoverResult.style.padding = "10px";
+        recoverResult.style.border = "1px solid black";
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: m/44'/${coinPath}'/${path1}'/0/0`;
+        document.getElementById("recover").innerHTML = "Hide Recovery Results";
+        return total;
+      });
+    </script>
+  </body>
+</html>
