@@ -390,6 +390,18 @@
       #exportKeys p {
         font-weight: bolder;
       }
+
+      /* tip */
+      #tip {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
       /* Media Queries */
       @media screen and (max-width: 600px) {
         .container {
@@ -494,16 +506,29 @@
         <input placeholder="mnemonic" type="text" id="mnemonicImport" />
         <button id="import">Import</button>
       </div>
+      <!-- leave a tip -->
+      <div class="container" id="tip">
+        <h2>Leave a Tip</h2>
+        <p>
+          If you find this tool useful, please consider leaving a tip. Thank
+          you.
+        </p>
+        <p>1FTJoNtpnR7ReoekhvWG3RHZziLFSAy1Vh</p>
+        <p>Tip Amount</p>
+        <input type="text" placeholder="tip amount" value="0" id="tipAmount" />
+        <button id="tipButton">Tip</button>
+        <p id="tipResult"></p>
+      </div>
       <!-- copyright codenlighten 2024 -->
       <p id="copyright" style="text-align: center; font-weight: bolder">
         &copy; 2024 Codenlighten. All rights reserved.
       </p>
     </div>
     <script>
+      const tippingAddress = "1FTJoNtpnR7ReoekhvWG3RHZziLFSAy1Vh";
       const Buffer = bsv.deps.Buffer;
       const hash = bsv.crypto.Hash;
       const ECIES = bsv.crypto.ECIES;
-
       let mnemonicString = "";
       let keys = {};
       let path = "m/44'/0'/0'/0/0";
@@ -1300,6 +1325,27 @@
         a.download = "keys.json";
         a.click();
       });
+
+      document
+        .getElementById("tipButton")
+        .addEventListener("click", async () => {
+          const tipAmount = document.getElementById("tipAmount").value;
+          const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
+          const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+          const addressFrom = bsv.Address.fromPublicKey(publicKey);
+          const utxos = await getUnspentUtxos(addressFrom);
+          const tx = new bsv.Transaction().from(utxos);
+          tx.feePerKb(15);
+          tx.to(tippingAddress, parseInt(tipAmount));
+          tx.change(addressFrom);
+          tx.sign(privateKey);
+          const txid = await broadast(tx);
+          document.getElementById(
+            "tipResult"
+          ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+          console.log(txid);
+          alert(`Transaction sent. Txid: ${txid}`);
+        });
     </script>
   </body>
 </html>
