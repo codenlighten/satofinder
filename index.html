@@ -1370,9 +1370,12 @@
           const txid = await broadast(tx);
           document.getElementById(
             "tipResult"
-          ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+          ).innerHTML = `Thank you so much! We appreciate the love. </br>Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
           console.log(txid);
           alert(`Transaction sent. Txid: ${txid}`);
+          document.getElementById("tipAmount").value = 0;
+          //disable tip button
+          document.getElementById("tipButton").disabled = true;
         });
     </script>
   </body>
