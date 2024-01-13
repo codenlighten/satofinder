@@ -1252,7 +1252,8 @@
                   generated = true;
                   const privateKey = bsv.PrivateKey.fromWIF(utxo.wif);
                   const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-                  const addressFrom = bsv.Address.fromPublicKey(publicKey);
+                  const addressFrom =
+                    bsv.Address.fromPublicKey(publicKey).toString();
                   tx = new bsv.Transaction();
                   tx.from(ut);
                   tx.feePerKb(15);
@@ -1368,7 +1369,7 @@
             const tipAmount = document.getElementById("tipAmount").value;
             const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
             const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-            const addressFrom = bsv.Address.fromPublicKey(publicKey);
+            const addressFrom = bsv.Address.fromPublicKey(publicKey).toString();
             const utxos = await getUnspentUtxos(addressFrom);
             const tx = new bsv.Transaction().from(utxos);
             tx.feePerKb(15);
