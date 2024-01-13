@@ -1415,7 +1415,7 @@
             ).innerHTML = `Thank you so much! We appreciate the love. </br>Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
             console.log(txid);
             alert(`Transaction sent. Txid: ${txid}`);
-            document.getElementById("tipAmount").value = 0;
+            document.getElementById("tipAmount").value = "";
             //disable tip button
             document.getElementById("tipButton").disabled = true;
             document.getElementById("tipButton").innerHTML = "Transaction Sent";
