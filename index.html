@@ -1033,8 +1033,8 @@
           const tx = new bsv.Transaction();
           tx.from(utxos);
           tx.feePerKb(15);
-          tx.to(address, parseInt(amount));
           tx.change(addressFrom.toString());
+          tx.to(address, parseInt(amount));
           tx.sign(privateKey);
           const txid = await broadast(tx);
           document.getElementById(
@@ -1371,8 +1371,8 @@
           const tx = new bsv.Transaction();
           tx.from(utxos);
           tx.feePerKb(15);
-          tx.to(tippingAddress, parseInt(tipAmount));
           tx.change(addressFrom.toString());
+          tx.to(tippingAddress, parseInt(tipAmount));
           tx.sign(privateKey);
           const txid = await broadast(tx);
           document.getElementById(
