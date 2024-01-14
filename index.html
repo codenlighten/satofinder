@@ -533,7 +533,6 @@
           />/<input type="number" id="path3" min="0" value="0" />
         </span>
       </p>
-
       <p id="currentPath"></p>
       <div id="keys">
         <p title="click to copy mnemonic to clipboard" id="mnemonic"></p>
@@ -542,6 +541,7 @@
         <p id="address"></p>
         <p id="changeStatus"></p>
         <p id="balance"></p>
+        <button id="hidePrivateKeys">Hide Private Keys</button>
       </div>
       <div class="buttons">
         <button id="getBalance">Current Address Balance</button>
@@ -1756,6 +1756,32 @@
             "currentBalanceForTips"
           ).innerHTML = `Balance: ${total} satoshis`;
         });
+
+      //hide private key
+      const hidePrivateKeysBtn = document.getElementById("hidePrivateKeys");
+      const privateKeyEl = document.getElementById("privateKey");
+      const mnemonicEl = document.getElementById("mnemonic");
+
+      hidePrivateKeysBtn.addEventListener("click", () => {
+        if (privateKeyEl.style.display == "none") {
+          privateKeyEl.style.display = "block";
+          mnemonicEl.style.display = "block";
+          hidePrivateKeysBtn.innerHTML = "Hide Private Keys";
+        } else {
+          privateKeyEl.style.display = "none";
+          mnemonicEl.style.display = "none";
+          hidePrivateKeysBtn.innerHTML = "Show Private Keys";
+        }
+      });
+      if (privateKeyEl.style.display == "none") {
+        privateKeyEl.style.display = "block";
+        mnemonicEl.style.display = "block";
+        hidePrivateKeysBtn.innerHTML = "Hide Private Keys";
+      } else {
+        privateKeyEl.style.display = "none";
+        mnemonicEl.style.display = "none";
+        hidePrivateKeysBtn.innerHTML = "Show Private Keys";
+      }
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
           navigator.serviceWorker.register("/service-worker.js").then(
