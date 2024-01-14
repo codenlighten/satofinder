@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SatoFinder</title>
+  </head>
+  <body>
+    <div class="mainContainer">
+      <h1>SatoFinder</h1>
+      <!-- enter referral code to enter -->
+      <form action="index.php" method="post">
+        <input
+          type="text"
+          name="referralCode"
+          placeholder="Enter referral code"
+        />
+        <input type="submit" value="Enter" />
+      </form>
+    </div>
+    <script>
+      const uuid = () => {
+        const s4 = () =>
+          Math.floor((1 + Math.random()) * 0x10000)
+            .toString(16)
+            .substring(1);
+        return `${s4()}-${s4()}-${s4()}-${s4()}-${s4()}-${s4()}-${s4()}-${s4()}`;
+      };
+      const defaultId = "31cb-9579-edcd-b7bc-7786-e48b-731f-820e";
+      function checkReferralCode() {
+        var referralCode = document.getElementsByName("referralCode")[0].value;
+        if (referralCode == "") {
+          alert("Please enter a referral code");
+          return false;
+        }
+        if (referralCode == defaultId) {
+          //  redirect to index.php
+          window.location.href = "main.html";
+        } else {
+          alert("Invalid referral code");
+          return false;
+        }
+      }
+    </script>
+  </body>
+</html>

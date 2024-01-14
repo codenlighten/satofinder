@@ -36,7 +36,7 @@
       content="SatoFinder is a simple tool to generate BSV mneomnic, keys, and addresses, recover coins, and send BSV."
     />
 
-    <script src="https://unpkg.com/bsv@1.5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-message.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-mnemonic.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-ecies.min.js"></script>
@@ -463,7 +463,36 @@
         Easily generate mnemonic, private key, public key, and address for the
         BSV blockchain. Recover Coins, and Send BSV.
       </p>
+      <!-- user choose radio button option bip32 bip44 -->
       <p>
+        <input
+          type="radio"
+          id="bip32"
+          name="bip"
+          value="32"
+          checked="checked"
+          onclick="bipChoice = '32'"
+        />
+        <label for="bip32">BIP32</label>
+        <input
+          type="radio"
+          id="bip44"
+          name="bip"
+          value="44"
+          onclick="bipChoice = '44'"
+        />
+        <label for="bip44">BIP44</label>
+      </p>
+      <p>
+        <span id="changePath32">
+          Path: m/0'/<input
+            type="number"
+            id="path1a"
+            min="0"
+            max="1"
+            value="0"
+          />'/<input type="number" id="path2a" min="0" value="0" />'
+        </span>
         <span id="changePath"
           >Path: m/44'/<input
             type="number"
@@ -516,8 +545,8 @@
         <p id="currentBalance"></p>
         <input placeholder="address" type="text" id="addressSend" />
         <input placeholder="amount" type="number" id="amountSend" />
-        <button id="send">Send</button>
-        <p id="resultTxid"></p>
+        <button id="send">Generate Transaction</button>
+        <div id="resultTxid"></div>
       </div>
       <div class="container" id="recoverCoins">
         <h2>Recover Coins from 1st 50 Addresses</h2>
@@ -576,6 +605,34 @@
       document.getElementById("path3").value = 0;
       document.getElementById("coinPath").value = 0;
       // generate keys
+      const generateKeys32 = (external, path) => {
+        path = `m/0'/${external}'/${path}'`;
+        if (mnemonicString == "") {
+          mnemonicString = bsv.Mnemonic.fromRandom().toString();
+        }
+        const mnemonic = bsv.Mnemonic.fromString(mnemonicString);
+        mnemonicString = mnemonic.toString();
+        const seed = mnemonic.toSeed();
+        const root = bsv.HDPrivateKey.fromSeed(seed);
+        const child = root.deriveChild(path);
+        const privateKey = child.privateKey;
+        const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
+        const address = bsv.Address.fromPublicKey(publicKey);
+        keys = {
+          mnemonic: mnemonic.toString(),
+          privateKey: privateKey.toString(),
+          publicKey: publicKey.toString(),
+          address: address.toString(),
+          path: path,
+          bip: bipChoice,
+        };
+        const keysHash = hash.sha256(Buffer.from(JSON.stringify(keys)));
+        keys.keysHash = keysHash.toString("hex");
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${path}`;
+        return keys;
+      };
       const generateKeys = (coin = 0, p = 0, q = 0, r = 0, m = false) => {
         path = `m/44'/${coin}'/${p}'/${q}/${r}`;
         if (mnemonicString == "" || m) {
@@ -596,6 +653,7 @@
           publicKey: publicKey.toString(),
           address: address.toString(),
           path: path,
+          bip: bipChoice,
         };
         const keysHash = hash.sha256(Buffer.from(JSON.stringify(keys)));
         keys.keysHash = keysHash.toString("hex");
@@ -606,13 +664,21 @@
       };
       // generate mnemonic
       const generateMnemonic = () => {
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3, true);
-        console.log(keys);
-        return keys.mnemonic;
+        if (bipChoice == "32") {
+          const external = document.getElementById("path1a").value;
+          const path = document.getElementById("path2a").value;
+          keys = generateKeys32(external, path);
+          console.log(keys);
+          return keys.mnemonic;
+        } else {
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          const path2 = document.getElementById("path2").value;
+          const path3 = document.getElementById("path3").value;
+          keys = generateKeys(coinPath, path1, path2, path3, true);
+          console.log(keys);
+          return keys.mnemonic;
+        }
       };
       // generate keys click
       document.getElementById("newMnemonics").addEventListener("click", () => {
@@ -700,13 +766,24 @@
           return;
         }
         mnemonicString = mnemonic;
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        changePath = path3;
-        receivingPath = path2;
+        if (bipChoice == "32") {
+          const external = document.getElementById("path1a").value;
+          const path = document.getElementById("path2a").value;
+          keys = generateKeys32(external, path);
+          console.log(keys);
+          changePath = path;
+          receivingPath = external;
+        } else {
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          const path2 = document.getElementById("path2").value;
+          const path3 = document.getElementById("path3").value;
+          keys = generateKeys(coinPath, path1, path2, path3);
+          console.log(keys);
+          changePath = path3;
+          receivingPath = path2;
+        }
+
         document.getElementById("mnemonic").innerHTML = keys.mnemonic;
         document.getElementById("privateKey").innerHTML = keys.privateKey;
         document.getElementById("publicKey").innerHTML = keys.publicKey;
@@ -731,30 +808,46 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("coinPath").value = path
-          .split("/")[2]
-          .replace("'", "");
-        document.getElementById("path1").value = path
-          .split("/")[3]
-          .replace("'", "");
-        document.getElementById("path2").value = path
-          .split("/")[4]
-          .replace("'", "");
-        document.getElementById("path3").value = path
-          .split("/")[5]
-          .replace("'", "");
-
-        if (!keys.path) {
-          keys.path = "m/44'/0'/0'/0/0";
+        if (keys.bip == "32") {
+          document.getElementById("bip32").checked = true;
+          document.getElementById("bip44").checked = false;
+          document.getElementById("changePath32").style.display = "block";
+          document.getElementById("changePath").style.display = "none";
+          document.getElementById("path1a").value = path
+            .split("/")[2]
+            .replace("'", "");
+          document.getElementById("path2a").value = path
+            .split("/")[3]
+            .replace("'", "");
+          path = keys.path;
+          changePath = parseInt(keys.path.split("/")[3]);
+          receivingPath = parseInt(keys.path.split("/")[2]);
+        } else {
+          document.getElementById("coinPath").value = path
+            .split("/")[2]
+            .replace("'", "");
+          document.getElementById("path1").value = path
+            .split("/")[3]
+            .replace("'", "");
+          document.getElementById("path2").value = path
+            .split("/")[4]
+            .replace("'", "");
+          document.getElementById("path3").value = path
+            .split("/")[5]
+            .replace("'", "");
+          path = keys.path;
+          changePath = parseInt(keys.path.split("/")[4]);
+          receivingPath = parseInt(keys.path.split("/")[3]);
         }
-        path = keys.path;
-        changePath = parseInt(keys.path.split("/")[4]);
-        receivingPath = parseInt(keys.path.split("/")[3]);
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
       } else {
-        keys = generateKeys(0, 0, 0, 0);
+        if (bipChoice == "32") {
+          keys = generateKeys32(0, 0);
+        } else {
+          keys = generateKeys(0, 0, 0, 0);
+        }
         changePath = 0;
         index = 0;
         document.getElementById("mnemonic").innerHTML = keys.mnemonic;
@@ -899,15 +992,25 @@
       document.getElementById("receiveToggle").addEventListener("click", () => {
         if (changePath == 0) {
           changePath = 1;
-          document.getElementById("path2").value = 1;
-          document.getElementById("receiveToggle").innerHTML =
-            "Get Receive (External) Address";
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          const path2 = document.getElementById("path2").value;
-          const path3 = document.getElementById("path3").value;
-          currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
-          keys = generateKeys(coinPath, path1, path2, path3);
+          if (bipChoice == "44") {
+            document.getElementById("path2").value = 1;
+            document.getElementById("receiveToggle").innerHTML =
+              "Get Receive (External) Address";
+            const coinPath = document.getElementById("coinPath").value;
+            const path1 = document.getElementById("path1").value;
+            const path2 = document.getElementById("path2").value;
+            const path3 = document.getElementById("path3").value;
+            currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
+            keys = generateKeys(coinPath, path1, path2, path3);
+          } else {
+            document.getElementById("path2a").value = 1;
+            document.getElementById("receiveToggle").innerHTML =
+              "Get Receive (External) Address";
+            const external = document.getElementById("path1a").value;
+            const path = document.getElementById("path2a").value;
+            currentPath = `m/0'/${external}'/${path}'`;
+            keys = generateKeys32(external, path);
+          }
           document.getElementById(
             "currentPath"
           ).innerHTML = `Current Path: ${currentPath}`;
@@ -920,15 +1023,25 @@
           //change
         } else {
           changePath = 0;
-          document.getElementById("path2").value = 0;
-          document.getElementById("receiveToggle").innerHTML =
-            "Get Change (Internal) Address";
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          const path2 = (document.getElementById("path2").value = changePath);
-          const path3 = document.getElementById("path3").value;
-          currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
-          keys = generateKeys(coinPath, path1, path2, path3);
+          if (bipChoice == "44") {
+            document.getElementById("path2").value = 0;
+            document.getElementById("receiveToggle").innerHTML =
+              "Get Change (Internal) Address";
+            const coinPath = document.getElementById("coinPath").value;
+            const path1 = document.getElementById("path1").value;
+            const path2 = (document.getElementById("path2").value = changePath);
+            const path3 = document.getElementById("path3").value;
+            currentPath = `m/44'/${coinPath}'/${path1}'/${path2}/${path3}`;
+            keys = generateKeys(coinPath, path1, path2, path3);
+          } else {
+            document.getElementById("path2a").value = 0;
+            document.getElementById("receiveToggle").innerHTML =
+              "Get Change (Internal) Address";
+            const external = document.getElementById("path1a").value;
+            const path = document.getElementById("path2a").value;
+            currentPath = `m/0'/${external}'/${path}'`;
+            keys = generateKeys32(external, path);
+          }
           document.getElementById(
             "currentPath"
           ).innerHTML = `Current Path: ${currentPath}`;
@@ -941,12 +1054,19 @@
       });
 
       document.getElementById("reset").addEventListener("click", () => {
-        document.getElementById("path1").value = 0;
-        document.getElementById("path2").value = 0;
-        document.getElementById("path3").value = 0;
-        document.getElementById("coinPath").value = 0;
-        //generate
-        keys = generateKeys(0, 0, 0, 0);
+        if (bipChoice == "44") {
+          document.getElementById("path1").value = 0;
+          document.getElementById("path2").value = 0;
+          document.getElementById("path3").value = 0;
+          document.getElementById("coinPath").value = 0;
+          //generate
+          keys = generateKeys(0, 0, 0, 0);
+        } else {
+          document.getElementById("path1a").value = 0;
+          document.getElementById("path2a").value = 0;
+          //generate
+          keys = generateKeys32(0, 0);
+        }
         changePath = 0;
         index = 0;
         document.getElementById("mnemonic").innerHTML = keys.mnemonic;
@@ -959,18 +1079,25 @@
       });
 
       document.getElementById("nextAccount").addEventListener("click", () => {
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        const path3 = document.getElementById("path3").value;
-        const path2 = document.getElementById("path2").value;
-        accountPath = parseInt(path1) + 1;
-        keys = generateKeys(coinPath, accountPath, path2, path3);
-
+        if (bipChoice == "44") {
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          const path3 = document.getElementById("path3").value;
+          const path2 = document.getElementById("path2").value;
+          accountPath = parseInt(path1) + 1;
+          keys = generateKeys(coinPath, accountPath, path2, path3);
+          index = path3;
+          changePath = path2;
+        } else {
+          const external = document.getElementById("path1a").value;
+          const path = document.getElementById("path2a").value;
+          accountPath = parseInt(external) + 1;
+          keys = generateKeys32(accountPath, path);
+          index = path;
+          changePath = external;
+        }
         path = keys.path;
-        index = path3;
-        changePath = path2;
-        document.getElementById("coinPath").value = coinPath;
-        document.getElementById("path1").value = accountPath;
+
         document.getElementById("mnemonic").innerHTML = keys.mnemonic;
         document.getElementById("privateKey").innerHTML = keys.privateKey;
         document.getElementById("publicKey").innerHTML = keys.publicKey;
@@ -1024,33 +1151,55 @@
 
       document.getElementById("send").addEventListener("click", async () => {
         try {
-          if (!confirm("Are you sure you want to send?")) {
-            return;
-          }
           const address = document.getElementById("addressSend").value;
           const amount = document.getElementById("amountSend").value;
+          if (!address || !amount) {
+            alert("Please enter address and amount.");
+            return;
+          }
           const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
           const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-          const addressFrom = bsv.Address.fromPublicKey(publicKey);
+          const addressFrom = bsv.Address.fromPublicKey(publicKey).toString();
+          console.log(addressFrom);
           const utxos = await getUnspentUtxos(addressFrom);
           const tx = new bsv.Transaction();
-          tx.from(utxos);
-          const feePerKb = 15;
-          const size = tx._estimateSize();
-          const fee = Math.ceil((feePerKb * size) / 1024);
-          tx.fee(fee);
-          tx.to(address, parseInt(amount));
-          const totalSats = utxos.reduce((acc, utxo) => {
-            return acc + utxo.satoshis;
-          }, 0);
-          tx.to(addressFrom, totalSats - parseInt(amount) - 5);
-          tx.sign(privateKey);
-          const txid = await broadast(tx);
-          document.getElementById(
-            "resultTxid"
-          ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
-          console.log(txid);
-          alert(`Transaction sent. Txid: ${txid}`);
+          tx.from(utxos) // Set the unspent transaction outputs
+            .to(address, parseInt(amount)) // Specify the recipient and amount to send
+            .change(addressFrom) // Set the change address
+            .feePerKb(50) // Set the fee per kilobyte to use when calculating the fee
+            .sign(privateKey);
+          const txString = tx.toString();
+          console.log(txString);
+          const txDiv = document.getElementById("resultTxid");
+          const txP = document.createElement("p");
+          txP.innerHTML = txString;
+          txP.title = "Click to copy transaction string to clipboard.";
+          const titleP = document.createElement("p");
+          titleP.innerHTML =
+            "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
+          txDiv.appendChild(titleP);
+          txDiv.appendChild(txP);
+          txP.addEventListener("click", () => {
+            copyToClipboard(txString);
+            alert("Transaction copied to clipboard.");
+          });
+          const broadcastButton = document.createElement("button");
+          broadcastButton.innerHTML = "Broadcast";
+          txDiv.appendChild(broadcastButton);
+          document.getElementById("send").style.display = "none";
+          broadcastButton.addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to send?")) {
+              return;
+            }
+            const txid = await broadast(tx);
+            console.log(txid);
+            alert(`Transaction sent. Txid: ${txid}`);
+            const txInfo = await getTxInfo(txid);
+            console.log(txInfo);
+            const txInfoDiv = document.createElement("div");
+            txInfoDiv.innerHTML = JSON.stringify(txInfo);
+            txDiv.appendChild(txInfoDiv);
+          });
         } catch (e) {
           alert(e.message);
         }
@@ -1185,25 +1334,48 @@
       const recoverCoins = async () => {
         const recoverArray = [];
         const addresses = [];
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        for (let i = 0; i < 49; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          const newkeys = generateKeys(coinPath, path1, 0, i);
-          const newkeys2 = generateKeys(coinPath, path1, 1, i);
-          document.getElementById(
-            "recoverResult"
-          ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
-          addresses.push({
-            address: newkeys.address,
-            path: newkeys.path,
-            wif: newkeys.privateKey,
-          });
-          addresses.push({
-            address: newkeys2.address,
-            path: newkeys2.path,
-            wif: newkeys2.privateKey,
-          });
+        if (bipChoice == "44") {
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          for (let i = 0; i < 49; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const newkeys = generateKeys(coinPath, path1, 0, i);
+            const newkeys2 = generateKeys(coinPath, path1, 1, i);
+            document.getElementById(
+              "recoverResult"
+            ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
+            addresses.push({
+              address: newkeys.address,
+              path: newkeys.path,
+              wif: newkeys.privateKey,
+            });
+            addresses.push({
+              address: newkeys2.address,
+              path: newkeys2.path,
+              wif: newkeys2.privateKey,
+            });
+          }
+        } else {
+          const external = 0;
+          const internal = 1;
+          for (let i = 0; i < 49; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const newkeys = generateKeys32(external, i);
+            const newkeys2 = generateKeys32(internal, i);
+            document.getElementById(
+              "recoverResult"
+            ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
+            addresses.push({
+              address: newkeys.address,
+              path: newkeys.path,
+              wif: newkeys.privateKey,
+            });
+            addresses.push({
+              address: newkeys2.address,
+              path: newkeys2.path,
+              wif: newkeys2.privateKey,
+            });
+          }
         }
         const utxos = await getUnspentUtxos2(addresses);
         return utxos;
@@ -1269,14 +1441,14 @@
                   const addressFrom =
                     bsv.Address.fromPublicKey(publicKey).toString();
                   tx = new bsv.Transaction();
-                  tx.from(ut);
-                  tx.feePerKb(15);
-                  tx.to(
-                    receiver.value,
-                    parseInt(ut.satoshis - tx._estimateFee())
-                  );
-                  tx.change(addressFrom);
-                  tx.sign(privateKey);
+                  tx.from(ut)
+                    .feePerKb(15)
+                    .tx.to(
+                      receiver.value,
+                      parseInt(ut.satoshis - tx._estimateFee())
+                    )
+                    .change(addressFrom)
+                    .sign(privateKey);
                   const txString = tx.toString();
                   const txStringP = document.createElement("p");
                   const txStringDescription = document.createElement("p");
@@ -1404,6 +1576,120 @@
           console.log(txid);
           alert(`Transaction sent. Txid: ${txid}`);
         });
+      //radio buttons
+      document.getElementById("bip44").addEventListener("click", () => {
+        bipChoice = "44";
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        console.log(keys);
+        changePath = path2;
+        receivingPath = path1;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+        document.getElementById("changePath").style.display = "block";
+        document.getElementById("changePath32").style.display = "none";
+      });
+      document.getElementById("bip32").addEventListener("click", () => {
+        bipChoice = "32";
+        const external = document.getElementById("path1a").value;
+        const path = document.getElementById("path2a").value;
+        keys = generateKeys32(external, path);
+        console.log(keys);
+        changePath = path;
+        receivingPath = external;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+
+        // hide bip44
+        document.getElementById("changePath32").style.display = "block";
+        document.getElementById("changePath").style.display = "none";
+      });
+      if (bipChoice == "44") {
+        document.getElementById("bip44").checked = true;
+        const coinPath = document.getElementById("coinPath").value;
+        const path1 = document.getElementById("path1").value;
+        const path2 = document.getElementById("path2").value;
+        const path3 = document.getElementById("path3").value;
+        keys = generateKeys(coinPath, path1, path2, path3);
+        console.log(keys);
+        changePath = path2;
+        receivingPath = path1;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+        document.getElementById("changePath").style.display = "block";
+        document.getElementById("changePath32").style.display = "none";
+      } else {
+        document.getElementById("bip32").checked = true;
+        document.getElementById("changePath32").style.display = "block";
+        document.getElementById("changePath").style.display = "none";
+        const external = document.getElementById("path1a").value;
+        const path = document.getElementById("path2a").value;
+        keys = generateKeys32(external, path);
+        console.log(keys);
+        changePath = path;
+        receivingPath = external;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+      }
+
+      // event listener for path1a and path2a
+      document.getElementById("path1a").addEventListener("change", () => {
+        const external = document.getElementById("path1a").value;
+        const path = document.getElementById("path2a").value;
+        keys = generateKeys32(external, path);
+        console.log(keys);
+        changePath = path;
+        receivingPath = external;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+      });
+      document.getElementById("path2a").addEventListener("change", () => {
+        const external = document.getElementById("path1a").value;
+        const path = document.getElementById("path2a").value;
+        keys = generateKeys32(external, path);
+        console.log(keys);
+        changePath = path;
+        receivingPath = external;
+        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
+        document.getElementById("privateKey").innerHTML = keys.privateKey;
+        document.getElementById("publicKey").innerHTML = keys.publicKey;
+        document.getElementById("address").innerHTML = keys.address;
+        document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById(
+          "currentPath"
+        ).innerHTML = `Current Path: ${keys.path}`;
+      });
     </script>
   </body>
 </html>
