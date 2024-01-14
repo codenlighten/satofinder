@@ -672,6 +672,7 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        document.getElementById("changeStatus").innerHTML = "External";
         return keys;
       };
       const generateKeys = (coin = 0, p = 0, q = 0, r = 0, m = false) => {
@@ -701,6 +702,7 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        document.getElementById("changeStatus").innerHTML = "External";
         return keys;
       };
       // generate mnemonic
@@ -733,6 +735,7 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        document.getElementById("changeStatus").innerHTML = "External";
         // highlight store keys locally
         document.getElementById("storeKeysLocally").disabled = false;
         //change color of store keys locally
@@ -830,6 +833,7 @@
         document.getElementById("publicKey").innerHTML = keys.publicKey;
         document.getElementById("address").innerHTML = keys.address;
         document.getElementById("currentAddress").innerHTML = keys.address;
+        document.getElementById("changeStatus").innerHTML = "External";
 
         // store keys locally click
         document.getElementById("storeKeysLocally").click();
@@ -902,6 +906,8 @@
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
 
+        document.getElementById("changeStatus").innerHTML = "External";
+
         // alert new keys generated
         // store keys locally turn green
         alert(
@@ -930,6 +936,11 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        if (document.getElementById("path2").value == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
       });
       document.getElementById("path2").addEventListener("change", () => {
         const path1 = document.getElementById("path1").value;
@@ -948,6 +959,11 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        if (document.getElementById("path2").value == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
         if (changePath == 0) {
           document.getElementById("receiveToggle").innerHTML =
             "Get Change (Internal) Address";
@@ -973,6 +989,11 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        if (document.getElementById("path2").value == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
       });
       document.getElementById("coinPath").addEventListener("change", () => {
         const path1 = document.getElementById("path1").value;
@@ -991,6 +1012,11 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        if (document.getElementById("path2").value == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
       });
 
       const generate21Addresses = () => {
