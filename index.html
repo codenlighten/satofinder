@@ -604,6 +604,8 @@
             >1Nqo2xV54jUzo6jMVJ63btWmSkpAibb2oc</a
           >
         </p>
+        <p id="currentBalanceForTips"></p>
+
         <input
           type="text"
           placeholder="tip amount in satoshis"
@@ -1884,6 +1886,17 @@
         .getElementById("addressSend")
         .addEventListener("focus", async () => {
           document.getElementById("getBalance").click();
+        });
+      // add event listener input tip on focus
+      document
+        .getElementById("tipAmount")
+        .addEventListener("focus", async () => {
+          const address = keys.address;
+          const balance = await getBalance(address);
+          const total = balance.confirmed + balance.unconfirmed;
+          document.getElementById(
+            "currentBalanceForTips"
+          ).innerHTML = `Balance: ${total} satoshis`;
         });
     </script>
   </body>
