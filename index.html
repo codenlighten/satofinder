@@ -1446,7 +1446,7 @@
                   tx = new bsv.Transaction();
                   tx.from(ut)
                     .feePerKb(15)
-                    .tx.to(
+                    .to(
                       receiver.value,
                       parseInt(ut.satoshis - tx._estimateFee())
                     )
