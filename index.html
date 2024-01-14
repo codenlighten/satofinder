@@ -62,7 +62,7 @@
         background-color: #ffffff;
         padding: 20px;
         word-wrap: break-word;
-        background-image: url("logo.png");
+        background-image: url("https://satofinder.com/logo.png");
       }
 
       /* Global Styles */
@@ -483,7 +483,7 @@
   <body>
     <div id="mainContainer">
       <h1 id="title">SatoFinder</h1>
-      <img src="bsv.png" alt="" id="bsv" />
+      <img src="https://satofinder.com/bsv.png" alt="" id="bsv" />
       <p id="description">
         Easily generate mnemonic, private key, public key, and address for the
         BSV blockchain. Recover Coins, and Send BSV.
@@ -838,6 +838,12 @@
         document.getElementById("publicKey").innerHTML = keys.publicKey;
         document.getElementById("address").innerHTML = keys.address;
         document.getElementById("currentAddress").innerHTML = keys.address;
+        if (!keys.bip) {
+          keys.bip = "44";
+        }
+        if (!keys.path) {
+          keys.path = "m/44'/0'/0'/0/0";
+        }
         path = keys.path;
         document.getElementById(
           "currentPath"
