@@ -1243,7 +1243,7 @@
           tx.from(utxos) // Set the unspent transaction outputs
             .to(address, parseInt(amount)) // Specify the recipient and amount to send
             .change(addressFrom) // Set the change address
-            .feePerKb(50) // Set the fee per kilobyte to use when calculating the fee
+            .feePerKb(15) // Set the fee per kilobyte to use when calculating the fee
             .sign(privateKey);
           const txString = tx.toString();
           console.log(txString);
@@ -1670,7 +1670,7 @@
           tx.from(utxos) // Set the unspent transaction outputs
             .to(tippingAddress, parseInt(tipAmount)) // Specify the recipient and amount to send
             .change(addressFrom) // Set the change address
-            .feePerKb(50) // Set the fee per kilobyte to use when calculating the fee
+            .feePerKb(15) // Set the fee per kilobyte to use when calculating the fee
             .sign(privateKey);
           const txString = tx.toString();
           console.log(txString);
