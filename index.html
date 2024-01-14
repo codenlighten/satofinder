@@ -586,7 +586,6 @@
         <h2>Generate New Mnemonic</h2>
         <button id="newMnemonics">Generate New Mnemonic</button>
       </div>
-
       <div class="container" id="importMnemonic">
         <h2>Import Mnemonic</h2>
         <input placeholder="mnemonic" type="text" id="mnemonicImport" />
@@ -1641,36 +1640,60 @@
       document
         .getElementById("tipButton")
         .addEventListener("click", async () => {
-          if (!confirm("Are you sure you want to leave a tip?")) {
-            return;
-          }
+          // if (!confirm("Are you sure you want to leave a tip?")) {
+          //   return;
+          // }
           const tipAmount = document.getElementById("tipAmount").value;
           const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
           const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-          const addressFrom = bsv.Address.fromPublicKey(publicKey);
+          const addressFrom = bsv.Address.fromPublicKey(publicKey).toString();
           if (!tipAmount) {
             alert("Enter tip amount.");
             return;
           }
           const utxos = await getUnspentUtxos(addressFrom);
-          const tx = new bsv.Transaction();
-          tx.from(utxos);
-          const feePerKb = 15;
-          const size = tx._estimateSize();
-          const fee = Math.ceil((feePerKb * size) / 1024);
-          tx.fee(fee);
-          tx.to(tippingAddress, parseInt(tipAmount));
           const totalSats = utxos.reduce((acc, utxo) => {
             return acc + utxo.satoshis;
           }, 0);
-          tx.to(addressFrom, totalSats - parseInt(tipAmount) - 5);
-          tx.sign(privateKey);
-          const txid = await broadast(tx);
-          document.getElementById(
-            "tipResult"
-          ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
-          console.log(txid);
-          alert(`Transaction sent. Txid: ${txid}`);
+          if (totalSats < tipAmount) {
+            alert("Not enough funds.");
+            return;
+          }
+          const tx = new bsv.Transaction();
+          tx.from(utxos) // Set the unspent transaction outputs
+            .to(tippingAddress, parseInt(tipAmount)) // Specify the recipient and amount to send
+            .change(addressFrom) // Set the change address
+            .feePerKb(50) // Set the fee per kilobyte to use when calculating the fee
+            .sign(privateKey);
+          const txString = tx.toString();
+          console.log(txString);
+          const txDiv = document.getElementById("tipResult");
+          const txP = document.createElement("p");
+          txP.innerHTML = txString;
+          txP.title = "Click to copy transaction string to clipboard.";
+          const titleP = document.createElement("p");
+          titleP.innerHTML =
+            "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
+          txDiv.appendChild(titleP);
+          txDiv.appendChild(txP);
+          txP.addEventListener("click", () => {
+            copyToClipboard(txString);
+            alert("Transaction copied to clipboard.");
+          });
+          const broadcastButton = document.createElement("button");
+          broadcastButton.innerHTML = "Broadcast";
+          txDiv.appendChild(broadcastButton);
+          broadcastButton.addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to send?")) {
+              return;
+            }
+            const txid = await broadast(tx);
+            document.getElementById(
+              "tipResult"
+            ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
+            console.log(txid);
+            alert(`Transaction sent. Txid: ${txid}`);
+          });
         });
       //radio buttons
       document.getElementById("bip44").addEventListener("click", () => {
