@@ -551,6 +551,7 @@
         </button>
       </div> -->
       <p id="currentPath"></p>
+      <p id="changeStatus"></p>
       <div id="keys">
         <p title="click to copy mnemonic to clipboard" id="mnemonic"></p>
         <p id="privateKey"></p>
@@ -632,6 +633,7 @@
       let keys = {};
       let path = "m/44'/0'/0'/0/0";
       let changePath = 0;
+
       let accountPath = 0;
       let bipChoice = "44";
       // next receiving address
@@ -1740,14 +1742,20 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
+        //changeStatus innerhtml
+        if (external == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
       });
       document.getElementById("path2a").addEventListener("change", () => {
         const external = document.getElementById("path1a").value;
         const path = document.getElementById("path2a").value;
+
         keys = generateKeys32(external, path);
         console.log(keys);
-        changePath = path;
-        receivingPath = external;
+
         document.getElementById("mnemonic").innerHTML = keys.mnemonic;
         document.getElementById("privateKey").innerHTML = keys.privateKey;
         document.getElementById("publicKey").innerHTML = keys.publicKey;
@@ -1756,7 +1764,26 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
+        changePath = path;
+        receivingPath = external;
+        //changeStatus innerhtml
+        if (external == 0) {
+          document.getElementById("changeStatus").innerHTML = "External";
+        } else {
+          document.getElementById("changeStatus").innerHTML = "Internal";
+        }
       });
+      if (document.getElementById("path1a").value == 0) {
+        document.getElementById("changeStatus").innerHTML = "External";
+      } else {
+        document.getElementById("changeStatus").innerHTML = "Internal";
+      }
+      // event listener for bip44 change status
+      if (document.getElementById("path2").value == 0) {
+        document.getElementById("changeStatus").innerHTML = "External";
+      } else {
+        document.getElementById("changeStatus").innerHTML = "Internal";
+      }
     </script>
   </body>
 </html>
