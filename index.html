@@ -586,13 +586,6 @@
         <h2>Generate New Mnemonic</h2>
         <button id="newMnemonics">Generate New Mnemonic</button>
       </div>
-      <div class="container" id="addresses">
-        <h2>Addresses</h2>
-        <button id="nextAddress">Next Address</button>
-        <button id="nextAccount">Next Account</button>
-        <button id="receiveToggle">Get Change (Internal) Address</button>
-        <button id="reset">RESET (Default Address)</button>
-      </div>
       <div class="container" id="mnemonicImport">
         <h2>Import Mnemonic</h2>
         <input placeholder="mnemonic" type="text" id="mnemonicImport" />
@@ -1861,6 +1854,13 @@
         document.getElementById("changeStatus").innerHTML =
           "Internal/Change Address";
       }
+
+      // send bsv input focus get balance
+      document
+        .getElementById("addressSend")
+        .addEventListener("focus", async () => {
+          document.getElementById("getBalance").click();
+        });
     </script>
   </body>
 </html>
