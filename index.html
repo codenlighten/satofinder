@@ -672,7 +672,8 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML = "External";
+        document.getElementById("changeStatus").innerHTML =
+          "External/Receive Address";
         return keys;
       };
       const generateKeys = (coin = 0, p = 0, q = 0, r = 0, m = false) => {
@@ -702,7 +703,8 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML = "External";
+        document.getElementById("changeStatus").innerHTML =
+          "External/Receive Address";
         return keys;
       };
       // generate mnemonic
@@ -735,7 +737,8 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML = "External";
+        document.getElementById("changeStatus").innerHTML =
+          "External/Receive Address";
         // highlight store keys locally
         document.getElementById("storeKeysLocally").disabled = false;
         //change color of store keys locally
@@ -833,7 +836,8 @@
         document.getElementById("publicKey").innerHTML = keys.publicKey;
         document.getElementById("address").innerHTML = keys.address;
         document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById("changeStatus").innerHTML = "External";
+        document.getElementById("changeStatus").innerHTML =
+          "External/Receive Address";
 
         // store keys locally click
         document.getElementById("storeKeysLocally").click();
@@ -937,9 +941,11 @@
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
         if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML = "External";
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
         } else {
-          document.getElementById("changeStatus").innerHTML = "Internal";
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
         }
       });
       document.getElementById("path2").addEventListener("change", () => {
@@ -960,9 +966,11 @@
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
         if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML = "External";
+          document.getElementById("changeStatus").innerHTML =
+            "ExtExternal/Receive Addressernal";
         } else {
-          document.getElementById("changeStatus").innerHTML = "Internal";
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
         }
         if (changePath == 0) {
           document.getElementById("receiveToggle").innerHTML =
@@ -990,9 +998,11 @@
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
         if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML = "External";
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
         } else {
-          document.getElementById("changeStatus").innerHTML = "Internal";
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
         }
       });
       document.getElementById("coinPath").addEventListener("change", () => {
@@ -1013,9 +1023,11 @@
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
         if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML = "External";
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
         } else {
-          document.getElementById("changeStatus").innerHTML = "Internal";
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
         }
       });
 
@@ -1689,6 +1701,14 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
+        //change status innerhtml
+        if (path2 == 0) {
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
+        } else {
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
+        }
         document.getElementById("changePath").style.display = "block";
         document.getElementById("changePath32").style.display = "none";
       });
@@ -1708,7 +1728,14 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
-
+        //change status innerhtml
+        if (external == 0) {
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
+        } else {
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
+        }
         // hide bip44
         document.getElementById("changePath32").style.display = "block";
         document.getElementById("changePath").style.display = "none";
@@ -1730,6 +1757,14 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
+        //change status innerhtml
+        if (path2 == 0) {
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
+        } else {
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
+        }
         document.getElementById("changePath").style.display = "block";
         document.getElementById("changePath32").style.display = "none";
       } else {
@@ -1750,6 +1785,14 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${keys.path}`;
+        //changeStatus innerhtml
+        if (external == 0) {
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
+        } else {
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
+        }
       }
 
       // event listener for path1a and path2a
