@@ -1271,11 +1271,9 @@
             const txid = await broadast(tx);
             console.log(txid);
             alert(`Transaction sent. Txid: ${txid}`);
-            const txInfo = await getTxInfo(txid);
-            console.log(txInfo);
-            const txInfoDiv = document.createElement("div");
-            txInfoDiv.innerHTML = JSON.stringify(txInfo);
-            txDiv.appendChild(txInfoDiv);
+            //replace with txid
+            txDiv.innerHTML = `Transaction sent. Txid: <a href='https://whatsonchain.com/tx/${txid}' target='_blank'>${txid}</a>`;
+            broadcastButton.style.display = "none";
           });
         } catch (e) {
           alert(e.message);
