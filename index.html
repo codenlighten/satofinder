@@ -808,6 +808,9 @@
         document.getElementById(
           "currentPath"
         ).innerHTML = `Current Path: ${path}`;
+        if (!keys.bip) {
+          keys.bip = "44";
+        }
         if (keys.bip == "32") {
           document.getElementById("bip32").checked = true;
           document.getElementById("bip44").checked = false;
