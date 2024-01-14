@@ -1837,9 +1837,11 @@
         receivingPath = external;
         //changeStatus innerhtml
         if (external == 0) {
-          document.getElementById("changeStatus").innerHTML = "External";
+          document.getElementById("changeStatus").innerHTML =
+            "External/Receive Address";
         } else {
-          document.getElementById("changeStatus").innerHTML = "Internal";
+          document.getElementById("changeStatus").innerHTML =
+            "Internal/Change Address";
         }
       });
       if (document.getElementById("path1a").value == 0) {
@@ -1849,9 +1851,11 @@
       }
       // event listener for bip44 change status
       if (document.getElementById("path2").value == 0) {
-        document.getElementById("changeStatus").innerHTML = "External";
+        document.getElementById("changeStatus").innerHTML =
+          "External/Receive Address";
       } else {
-        document.getElementById("changeStatus").innerHTML = "Internal";
+        document.getElementById("changeStatus").innerHTML =
+          "Internal/Change Address";
       }
     </script>
   </body>
