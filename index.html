@@ -709,6 +709,16 @@
           const path = document.getElementById("path2a").value;
           keys = generateKeys32(external, path);
           console.log(keys);
+          //scroll to mnemonic highlight store keys locally
+          document.getElementById("storeKeysLocally").disabled = false;
+          //change color of store keys locally
+          document.getElementById("storeKeysLocally").style.backgroundColor =
+            "green";
+          document.getElementById("mnemonic").scrollIntoView();
+          alert(
+            "Click on store keys to store locally. Please write down mnemonic and store somewhere safe: " +
+              keys.mnemonic
+          );
           return keys.mnemonic;
         } else {
           const coinPath = document.getElementById("coinPath").value;
@@ -717,6 +727,15 @@
           const path3 = document.getElementById("path3").value;
           keys = generateKeys(coinPath, path1, path2, path3, true);
           console.log(keys);
+          document.getElementById("storeKeysLocally").disabled = false;
+          //change color of store keys locally
+          document.getElementById("storeKeysLocally").style.backgroundColor =
+            "green";
+          document.getElementById("mnemonic").scrollIntoView();
+          alert(
+            "Click on store keys to store locally. Please write down mnemonic and store somewhere safe: " +
+              keys.mnemonic
+          );
           return keys.mnemonic;
         }
       };
