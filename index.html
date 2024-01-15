@@ -494,6 +494,49 @@
         font-weight: bolder;
       }
 
+      #historyResult {
+        font-weight: bolder;
+      }
+
+      #walletType {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 10px;
+        font-weight: bolder;
+      }
+
+      #walletType option {
+        font-weight: bolder;
+      }
+
+      #currentPrice {
+        text-align: center;
+        font-weight: bolder;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+
+      #currentBalance {
+        text-align: center;
+        font-weight: bolder;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+
+      #currentBalanceForTips {
+        text-align: center;
+        font-weight: bolder;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+      }
+
       /* Media Queries */
       @media screen and (max-width: 600px) {
         .container {
@@ -572,6 +615,18 @@
           />/<input type="number" id="path3" min="0" value="0" />
         </span>
       </p>
+      <select name="" id="walletType">
+        <option value="null">Choose Wallet</option>
+        <option value="bip44" id="basicBip44">Default(BIP44)</option>
+        <option value="bip32">BIP32 Basic</option>
+        <option value="atomic">Atomic</option>
+        <option value="exodus">Exodus</option>
+        <option value="keevo">Keevo</option>
+        <option value="moneybutton">MoneyButton</option>
+        <option value="relayx">RelayX</option>
+        <option value="simplycash">SimplyCash</option>
+        <option value="twetch">Twetch</option>
+      </select>
       <p id="currentPath"></p>
       <div id="keys">
         <p title="click to copy mnemonic to clipboard" id="mnemonic"></p>
@@ -761,6 +816,12 @@
           return keys.mnemonic;
         }
       };
+
+      //default wallettype
+      let walletType = "null";
+      // wallet type change
+      document.getElementById("walletType").value = walletType;
+
       // generate keys click
       document.getElementById("newMnemonics").addEventListener("click", () => {
         mnemonicString = generateMnemonic();
@@ -1967,6 +2028,66 @@
         mnemonicEl.style.display = "none";
         hidePrivateKeysBtn.innerHTML = "Show Private Keys";
       }
+
+      // Atomic wallet: m/44'/145'/0'/0/0
+      // Exodus: m/44'/236'/0'/0/0
+      // Keevo: m/44'/236'/0'
+      // Money button: m/44'/0'/0'
+      // Simply cash: m/44'/145'/0'
+      // RelayX m/44'/236'/0'/0/0
+
+      // select wallet type
+      document.getElementById("walletType").addEventListener("change", () => {
+        const walletType = document.getElementById("walletType").value;
+        if (walletType == "atomic") {
+          document.getElementById("coinPath").value = "145";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "exodus") {
+          document.getElementById("coinPath").value = "236";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "keevo") {
+          document.getElementById("coinPath").value = "236";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "moneybutton") {
+          document.getElementById("coinPath").value = "0";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "simplycash") {
+          document.getElementById("coinPath").value = "145";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "relayx") {
+          document.getElementById("coinPath").value = "236";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "bip44") {
+          document.getElementById("coinPath").value = "0";
+          document.getElementById("path1").value = "0";
+          document.getElementById("path2").value = "0";
+          document.getElementById("path3").value = "0";
+          document.getElementById("bip44").click();
+        } else if (walletType == "bip32") {
+          document.getElementById("path1a").value = "0";
+          document.getElementById("path2a").value = "0";
+          document.getElementById("bip32").click();
+        }
+      });
+
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
           navigator.serviceWorker.register("/service-worker.js").then(
