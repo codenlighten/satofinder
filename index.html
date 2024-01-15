@@ -1407,6 +1407,8 @@
           return;
         }
         historyStatus = true;
+        document.getElementById("history").innerHTML =
+          "Close Transaction History";
         const historyResult = document.getElementById("historyResult");
         historyResult.innerHTML = "";
         historyResult.style.border = "none";
