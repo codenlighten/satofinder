@@ -468,6 +468,32 @@
         text-decoration: none;
         color: #0056b3;
       }
+
+      #transactionHistory {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        border: 1px solid #cccccc;
+        border-radius: 5px;
+        padding: 20px;
+        font-weight: bolder;
+      }
+
+      #transactionHistory button {
+        display: block;
+        margin: 6px auto;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      #transactionHistory button:hover {
+        background-color: #003d82; /* Darker Shade for Hover */
+      }
+
+      #transactionHistory p {
+        font-weight: bolder;
+      }
+
       /* Media Queries */
       @media screen and (max-width: 600px) {
         .container {
@@ -573,6 +599,11 @@
         <h2>Recover Coins from 1st 50 Addresses</h2>
         <button id="recover">Recover Coins</button>
         <div id="recoverResult"></div>
+      </div>
+      <div class="container" id="transactionHistory">
+        <h2>Transaction History</h2>
+        <button id="history">Transaction History</button>
+        <div id="historyResult"></div>
       </div>
       <div class="container" id="exportKeys">
         <h2>Export Keys</h2>
@@ -1302,7 +1333,138 @@
           alert(e.message);
         }
       }
+      const getTxHistoryAll = async () => {
+        const historyArray = [];
+        const addresses = [];
+        if (bipChoice == "44") {
+          const coinPath = document.getElementById("coinPath").value;
+          const path1 = document.getElementById("path1").value;
+          for (let i = 0; i < 49; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const newkeys = generateKeys(coinPath, path1, 0, i);
+            const newkeys2 = generateKeys(coinPath, path1, 1, i);
+            document.getElementById(
+              "historyResult"
+            ).innerHTML = `Searching addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
+            addresses.push({
+              address: newkeys.address,
+              path: newkeys.path,
+              wif: newkeys.privateKey,
+            });
+            addresses.push({
+              address: newkeys2.address,
+              path: newkeys2.path,
+              wif: newkeys2.privateKey,
+            });
+          }
+        } else {
+          const external = 0;
+          const internal = 1;
+          for (let i = 0; i < 49; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            const newkeys = generateKeys32(external, i);
+            const newkeys2 = generateKeys32(internal, i);
+            document.getElementById(
+              "historyResult"
+            ).innerHTML = `Searching addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
+            addresses.push({
+              address: newkeys.address,
+              path: newkeys.path,
+              wif: newkeys.privateKey,
+            });
+            addresses.push({
+              address: newkeys2.address,
+              path: newkeys2.path,
+              wif: newkeys2.privateKey,
+            });
+          }
+        }
+        const addressArray = [];
+        addresses.forEach((address) => {
+          addressArray.push(address.address);
+        });
+        const url = "https://api.bitails.io/address/history/multi";
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ addresses: addressArray }),
+        });
+        const data = await response.json();
+        console.log(data);
+        return data;
+      };
 
+      let historyStatus = false;
+      document.getElementById("history").addEventListener("click", async () => {
+        if (historyStatus) {
+          document.getElementById("historyResult").innerHTML = "";
+          document.getElementById("historyResult").style.border = "none";
+
+          document.getElementById("history").innerHTML = "Transaction History";
+          historyStatus = false;
+          return;
+        }
+        historyStatus = true;
+        const historyResult = document.getElementById("historyResult");
+        historyResult.innerHTML = "";
+        historyResult.style.border = "none";
+        const title = document.createElement("h2");
+        title.innerHTML = "Transaction History:";
+        historyResult.appendChild(title);
+        const addressHistory = await getTxHistoryAll();
+        console.log(addressHistory);
+        addressHistory.forEach((tx) => {
+          //inputSatoshis
+          //outputSatoshis
+          //time
+          //blockheight
+          const txDiv = document.createElement("div");
+          const txP = document.createElement("p");
+          txP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${tx.txid}" target="_blank">${tx.txid}</a></br>Time: ${tx.time}</br>Blockheight: ${tx.blockheight}</br>Inputs: ${tx.inputSatoshis}</br>Outputs: ${tx.outputSatoshis}`;
+          txDiv.appendChild(txP);
+          const txInfo = document.createElement("button");
+          txInfo.innerHTML = "Transaction Info";
+          txDiv.appendChild(txInfo);
+          txInfo.addEventListener("click", async () => {
+            const txInfo = await getTxInfo(tx.txid);
+            console.log(txInfo);
+            const txInfoDiv = document.createElement("div");
+            // const txInfoP = document.createElement("p");
+            // txInfoP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txInfo.txid}" target="_blank">${txInfo.txid}</a></br>Time: ${txInfo.time}</br>Blockheight: ${txInfo.blockheight}</br>Inputs: ${txInfo.inputSatoshis}</br>Outputs: ${txInfo.outputSatoshis}`;
+            // txInfoDiv.appendChild(txInfoP);
+            const txInfoTitle = document.createElement("h3");
+            txInfoTitle.innerHTML = "Transaction Info:";
+            txInfoDiv.appendChild(txInfoTitle);
+            const txInfoInputsTitle = document.createElement("h3");
+            txInfoInputsTitle.innerHTML = "Inputs:";
+            txInfoDiv.appendChild(txInfoInputsTitle);
+            txInfoDiv.appendChild(document.createElement("hr"));
+            txInfo.vin.forEach((input) => {
+              const inputP = document.createElement("p");
+              inputP.innerHTML = `Txid:<a href="https://whatsonchain.com/tx/${input.txid}" target="_blank">${input.txid}</a></br>Vout: ${input.vout}</br>Sequence: ${input.sequence}`;
+              txInfoDiv.appendChild(inputP);
+              txInfoDiv.appendChild(document.createElement("hr"));
+            });
+            const txInfoOutputsTitle = document.createElement("h3");
+            txInfoOutputsTitle.innerHTML = "Outputs:";
+            txInfoDiv.appendChild(txInfoOutputsTitle);
+            txInfoDiv.appendChild(document.createElement("hr"));
+            txInfo.vout.forEach((output, i) => {
+              const outputP = document.createElement("p");
+              outputP.innerHTML = `Output: ${i}</br>Value: ${output.value}</br>Script: ${output.scriptPubKey.asm}`;
+              txInfoDiv.appendChild(outputP);
+              // txInfoDiv.appendChild(document.createElement("hr"));
+            });
+            const dashP = document.createElement("p");
+            dashP.innerHTML = "---------------------";
+            txInfoDiv.appendChild(dashP);
+            txDiv.appendChild(txInfoDiv);
+          });
+          historyResult.appendChild(txDiv);
+        });
+      });
       //recover coins goes through first 21 change and receive addresses, checking for utxos, and consolidates them to first address
       const totalRecoveryArray = [];
       const recoverCoins = async () => {
