@@ -1,0 +1,23 @@
+# Anything not needed by the multi-stage build. Keep this list tight — every
+# file copied into the build context goes into the image cache layer.
+.git
+.gitignore
+.vscode
+.idea
+
+# Build outputs (rebuilt inside the image)
+dist
+node_modules
+
+# Dev tooling not needed at build time
+spike.html
+
+# Logs / scratch
+*.log
+*.tar.gz
+*.swp
+*.bak
+
+# Local env / secrets — defense in depth, should never be in the repo anyway
+.env
+.env.*

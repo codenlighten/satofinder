@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SatoFinder v2 — Phase 0 spike</title>
+
+  <!--
+    Strict CSP. If any CDN bundle drifts off its pinned SRI hash, the script tag
+    is rejected before execution; if anything tries to load an off-list origin,
+    connect-src blocks it. Keep this list in lockstep with index.html later.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data:;
+    connect-src https://api.whatsonchain.com https://api.bitails.io;
+    base-uri 'none'; form-action 'none'; frame-ancestors 'none';
+  ">
+
+  <!-- @smartledger/bsv@3.4.3 — pinned with SHA-384 SRI. Bumping the SDK requires
+       bumping these hashes; tampered CDN responses get rejected. -->
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv.min.js"
+          integrity="sha384-fK4kLzP+qryi0rDQXggLpdNyDV+Ah7ir42H+VzIbHU1x5qjkeCTNBWBhK3rulf6V"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-mnemonic.min.js"
+          integrity="sha384-GQMXpY1DeHWMInXP4NyXAgErHJu0sOXpjr8QuzHCpPKp2aAi8Drk/VflXBhey4s3"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-message.min.js"
+          integrity="sha384-0Acsl74Yh+7IB+WItm8erLKmjWVzKLNgHqIxNZuO9KX/0DKhf162MbRKFoKSvrW5"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-ecies.min.js"
+          integrity="sha384-sPMPdSONnMFZjjhH32M/304wND8yEUI6ABWr6Unwf7wMEqFDisC1icQIaX4+HVHa"
+          crossorigin="anonymous"></script>
+
+  <style>
+    body{font:14px/1.5 ui-monospace,Menlo,monospace;background:#0b0b0c;color:#e6e6e6;margin:0;padding:24px;max-width:900px}
+    h1{font-size:18px;margin:0 0 16px;color:#7cd992}
+    pre{background:#141416;border:1px solid #26262a;border-radius:6px;padding:16px;white-space:pre-wrap;word-break:break-all}
+    .pass{color:#7cd992}
+    .fail{color:#ff6b6b;font-weight:700}
+    .hdr{color:#9aa0a6;margin-top:12px}
+  </style>
+</head>
+<body>
+  <h1>SatoFinder v2 — Phase 0 spike</h1>
+  <p>Confirms <code>@smartledger/bsv@3.4.3</code> loads via SRI-pinned CDN, exposes the API surface
+     the rewrite depends on, derives correct BIP39 vectors, and that the planned crypto + DOM helpers behave.</p>
+  <pre id="out">running…</pre>
+
+  <script>
+  (() => {
+    const out = document.getElementById('out');
+    const lines = [];
+    let passed = 0, failed = 0;
+    const log = (s) => lines.push(s);
+    const assert = (name, cond, detail = '') => {
+      const ok = !!cond;
+      if (ok) passed++; else failed++;
+      log(`${ok ? '<span class="pass">PASS</span>' : '<span class="fail">FAIL</span>'}  ${name}${detail ? '\n      ' + detail : ''}`);
+    };
+    const flush = () => { out.innerHTML = lines.join('\n') + `\n\n<span class="hdr">${passed} passed, ${failed} failed</span>`; };
+
+    (async () => {
+      log('<span class="hdr">--- SDK surface ---</span>');
+      assert('bsv global present', typeof bsv === 'object');
+      assert('bsv.Mnemonic loaded', typeof bsv.Mnemonic === 'function');
+      assert('bsv.HDPrivateKey loaded', typeof bsv.HDPrivateKey === 'function');
+      assert('bsv.Transaction loaded', typeof bsv.Transaction === 'function');
+      assert('bsv.PrivateKey loaded', typeof bsv.PrivateKey === 'function');
+      assert('bsv.Address loaded', typeof bsv.Address === 'function');
+      const tx = new bsv.Transaction();
+      for (const m of ['from','to','change','feePerKb','sign','toBuffer','toString']) {
+        assert(`Transaction#${m} is function`, typeof tx[m] === 'function');
+      }
+
+      log('<span class="hdr">--- BIP39 / BIP44 known vector (Trezor) ---</span>');
+      const M = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+      const m  = bsv.Mnemonic.fromString(M);
+      assert('Mnemonic.isValid', bsv.Mnemonic.isValid(M));
+      const seed = m.toSeed();
+      const root = bsv.HDPrivateKey.fromSeed(seed);
+      const child = root.deriveChild("m/44'/0'/0'/0/0");
+      const addr = bsv.Address.fromPublicKey(bsv.PublicKey.fromPrivateKey(child.privateKey)).toString();
+      const expected = '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA';
+      assert(`m/44'/0'/0'/0/0 address = ${expected}`, addr === expected, `got ${addr}`);
+
+      log('<span class="hdr">--- WebCrypto AES-GCM round-trip ---</span>');
+      const enc = new TextEncoder(), dec = new TextDecoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv   = crypto.getRandomValues(new Uint8Array(12));
+      const base = await crypto.subtle.importKey('raw', enc.encode('test-password'), 'PBKDF2', false, ['deriveKey']);
+      const key  = await crypto.subtle.deriveKey(
+        { name:'PBKDF2', salt, iterations: 310000, hash:'SHA-256' },
+        base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+      const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, enc.encode('hello'));
+      const pt = dec.decode(await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct));
+      assert('encrypt then decrypt yields "hello"', pt === 'hello', `got ${pt}`);
+      let threw = false;
+      try {
+        const badIv = crypto.getRandomValues(new Uint8Array(12));
+        await crypto.subtle.decrypt({ name:'AES-GCM', iv: badIv }, key, ct);
+      } catch { threw = true; }
+      assert('wrong IV throws', threw);
+
+      log('<span class="hdr">--- DOM helpers (XSS guards) ---</span>');
+      const safeUrl = (u) => /^(https?:|mailto:|#|\/)/.test(String(u)) ? String(u) : '#';
+      assert('safeUrl strips javascript:', safeUrl('javascript:alert(1)') === '#');
+      assert('safeUrl keeps https', safeUrl('https://woc/x') === 'https://woc/x');
+      const div = document.createElement('div');
+      div.appendChild(document.createTextNode('<script>alert(1)</' + 'script>'));
+      assert('textContent escapes <script>', !div.innerHTML.includes('<script'),
+        `innerHTML=${div.innerHTML.slice(0,80)}`);
+
+      log('<span class="hdr">--- Two-pass fee pattern (no broadcast) ---</span>');
+      // Fake UTXO at a deterministic address derived above
+      const child2 = root.deriveChild("m/44'/0'/0'/0/1");
+      const fromAddr = bsv.Address.fromPublicKey(bsv.PublicKey.fromPrivateKey(child2.privateKey)).toString();
+      const utxo = {
+        txId:  '0'.repeat(64),         // legacy bsv accepts txId or txid
+        outputIndex: 0,
+        address: fromAddr,
+        script: bsv.Script.buildPublicKeyHashOut(fromAddr).toHex(),
+        satoshis: 10000,
+      };
+      const feePerKb = 50;
+      const toAddr = expected;
+      try {
+        // Pass 1: realistic size with placeholder output
+        let t1 = new bsv.Transaction().from(utxo).feePerKb(feePerKb)
+                  .to(toAddr, utxo.satoshis).sign(child2.privateKey);
+        const vsize = t1.toBuffer().length;
+        const fee = Math.ceil((vsize * feePerKb) / 1000) + 10;
+        const sendAmount = utxo.satoshis - fee;
+        // Pass 2: rebuild with correct amount
+        let t2 = new bsv.Transaction().from(utxo).feePerKb(feePerKb)
+                  .to(toAddr, sendAmount).sign(child2.privateKey);
+        const outSum = t2.outputs.reduce((a,o)=>a+o.satoshis, 0);
+        assert(`fee > 0`, fee > 0, `vsize=${vsize} fee=${fee}`);
+        assert(`output sum = utxo - fee`, outSum === sendAmount && outSum === utxo.satoshis - fee,
+          `outSum=${outSum} sendAmount=${sendAmount} expected=${utxo.satoshis - fee}`);
+      } catch (e) {
+        assert('two-pass build did not throw', false, e.message);
+      }
+
+      flush();
+    })().catch(e => {
+      lines.push(`<span class="fail">FAIL  uncaught: ${e.message}</span>`);
+      flush();
+    });
+  })();
+  </script>
+</body>
+</html>
