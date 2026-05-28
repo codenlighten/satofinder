@@ -28,16 +28,41 @@ DIST_DIR="$SRC_DIR/dist"
 NO_NET=0
 [[ "${1:-}" == "--no-network" ]] && NO_NET=1
 
-# Runtime artifacts that go in the tarball. Anything not on this list is
-# excluded by construction — build.sh, spike.html, tests, .git, node_modules,
-# legacy logo.png / bsv.png, this script itself.
+# Files that go in the tarball. Designed so the same archive serves two
+# deployment paths:
+#
+#   1. Static host (Netlify / S3 / `nginx /var/www/`)
+#        tar -xzf satofinder-v2.0.0.tar.gz
+#        cp satofinder-v2.0.0/{index.html,service-worker.js,manifest.json,help.html,logo2.png} /srv/
+#
+#   2. CapRover (or anything that does `docker build` on an uploaded source dir)
+#        caprover deploy --tarFile dist/satofinder-v2.0.0.tar.gz
+#      CapRover reads captain-definition, runs the Dockerfile, which in turn
+#      runs ./make-tarball.sh --no-network and extracts a clean /out — so the
+#      static deploy artifacts inside the tarball are the same bytes that the
+#      container ends up serving.
+#
+# Anything not on this list (build outputs in dist/, spike.html, .git,
+# node_modules, etc.) is excluded by construction.
 ARTIFACTS=(
+  # Runtime / static deploy
   index.html
   service-worker.js
   manifest.json
   help.html
   README.md
   logo2.png
+
+  # CapRover + Docker build
+  captain-definition
+  Dockerfile
+  .dockerignore
+  nginx.conf
+  security-headers.conf
+
+  # Build scripts invoked by the Dockerfile builder stage
+  make-tarball.sh
+  build.sh
 )
 
 # 1. Build (re-hash inline script) -------------------------------------------
