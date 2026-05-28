@@ -67,6 +67,7 @@
   <h2>Send</h2>
   <div class="panel">
     <p>Enter the recipient address and amount (in satoshis). Click <em>Build transaction</em>. The app fetches UTXOs from WhatsOnChain, builds and signs the transaction using a two-pass fee calculation (no under-fee bugs), and shows you the full transaction (destination, amount, fee, change, raw hex) before you confirm.</p>
+    <p><em>Show raw transaction hex</em> expands a panel with the signed hex, a <em>Copy hex</em> button, and a link that opens <a href="https://whatsonchain.com/broadcast" target="_blank" rel="noopener noreferrer">WhatsOnChain's broadcast page</a> in a new tab. Paste the hex into WoC's Decode tab to independently verify inputs, outputs and fee before coming back here to confirm.</p>
     <p>Nothing leaves your browser until you click <em>Confirm &amp; broadcast</em>.</p>
   </div>
 
@@ -79,7 +80,8 @@
       <li>Edit it to send to any other BSV address you control — for example, a hardware-wallet address, an exchange deposit address, or a different account in this wallet.</li>
       <li><em>Use current</em> resets the field to the active derived address.</li>
     </ul>
-    <p>Each found address has its own <em>Sweep</em> button (one tx per source address — they must be signed by different keys, so they can't be combined into one transaction). When there are 2 or more matches, a <em>Sweep all</em> button at the top broadcasts a sweep for each in sequence; per-address results display next to each row.</p>
+    <p>Each found address has its own <em>Preview</em> button. Click it to build (but NOT broadcast) the sweep transaction; an inline review block shows the destination, amount, fee, and raw hex. You can copy the hex and inspect it on <a href="https://whatsonchain.com/broadcast" target="_blank" rel="noopener noreferrer">WhatsOnChain's decode tab</a> before clicking <em>Confirm &amp; broadcast</em>. Only one preview is open at a time; <em>Cancel</em> discards it without broadcasting.</p>
+    <p>When there are 2 or more matches, a <em>Sweep all</em> button at the top broadcasts a sweep for each pending address in sequence — this path bypasses the per-row preview since the destination is already set explicitly at the top of the panel. Per-address results display next to each row; one failure does not block the rest.</p>
   </div>
 
   <h2>Export &amp; backup</h2>

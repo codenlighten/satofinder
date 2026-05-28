@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-E1WHvRlRAlvx8QjYbAui8Xy0CBeUm+r6sY+SdOV7K1g=' https://cdn.jsdelivr.net;
+    script-src 'sha256-FSy1T+//erIV3Vjf7iJGkMFmnvO+v1tJOSryZjkuXwc=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io;
@@ -116,7 +116,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -154,6 +154,12 @@ const BITAILS_BATCH = 20;       // per-request address count
 const VAULT_KEY = 'satofinder.vault.v1';
 const PREFS_KEY = 'satofinder.prefs.v1';
 const TIPPING_ADDRESS = '139Gv2y2JcjCNdnJNS3kWGm36mjjespfQc';
+
+// External inspector for a built-but-unbroadcast tx. WhatsOnChain's broadcast
+// page also has a "Decode" mode that parses raw hex without sending — the
+// user can paste the hex there to verify inputs, outputs, addresses, and fee
+// against their expectation before flipping back here to confirm.
+const WOC_INSPECT_URL = 'https://whatsonchain.com/broadcast';
 
 // ====================== 04. CRYPTO ======================
 // WebCrypto-only vault: PBKDF2-SHA256(password, salt) -> AES-GCM key, encrypt
@@ -774,6 +780,33 @@ function makeKeyRow(label, value, onCopy, warning) {
   ]);
 }
 
+// Shared "raw hex + copy + inspect on WhatsOnChain" block. Used by both the
+// Send confirm panel and the per-row Sweep preview. Collapsed by default —
+// users who want to sanity-check expand it, copy the hex, paste into WoC's
+// broadcast/decode page (opens in a new tab via rel="noopener noreferrer"),
+// then come back here to Confirm. The link only opens the page; the user
+// still has to paste — we don't smuggle the hex through a URL parameter
+// (WoC's page doesn't accept it; even if it did, leaking your unbroadcast
+// tx into a query string would show up in the destination's referrer logs).
+function renderHexInspector(hex, opts = {}) {
+  const summary = opts.summary || 'Show raw transaction hex (inspect before broadcast)';
+  return el('details', { style: 'margin-bottom:12px' }, [
+    el('summary', { class: 'muted', style: 'cursor:pointer' }, summary),
+    el('div', { style: 'margin-top:8px' }, [
+      el('pre', { style: 'font-size:11px' }, hex),
+      el('div', { class: 'row', style: 'margin-top:8px' }, [
+        el('button', { onclick: () => Actions.copy(hex, 'Raw transaction hex') },
+          'Copy hex'),
+        el('a', { href: WOC_INSPECT_URL, target: '_blank', rel: 'noopener noreferrer',
+                  class: 'btn-as-link', style: 'flex:1' },
+          el('button', { style: 'width:100%' }, 'Open WhatsOnChain ↗')),
+      ]),
+      el('div', { class: 'muted', style: 'font-size:11px;margin-top:6px' },
+        'Open WhatsOnChain in a new tab, paste the hex into the Decode tab to verify inputs, outputs and fee. Come back here to Confirm — nothing has been broadcast yet.'),
+    ]),
+  ]);
+}
+
 function renderBalancePanel(s) {
   const d = s.derived;
   const b = s.balance;
@@ -876,10 +909,7 @@ function renderSendConfirm(s, draft) {
       el('div', { class: 'muted', style: 'font-size:11px' }, 'Total input spent'),
       el('div', {}, [Fmt.sats(totalIn) + ' sats']),
     ]),
-    el('details', { style: 'margin-bottom:12px' }, [
-      el('summary', { class: 'muted', style: 'cursor:pointer' }, 'Show raw transaction hex'),
-      el('pre', { style: 'font-size:11px;margin-top:8px' }, draft.hex),
-    ]),
+    renderHexInspector(draft.hex),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.cancelSend() }, 'Cancel'),
       el('button', { class: 'primary danger', disabled: s.busy,
@@ -958,6 +988,27 @@ function renderRecoveryPanel(s) {
   ]);
 }
 function renderRecoveryRow(s, item, sweepResult) {
+  const preview = s.draft && s.draft.sweepPreview;
+  const isPreviewing = preview && preview.path === item.path;
+  // If THIS row is the active preview, render the inline review block
+  // (destination, amount, fee, hex inspector, Confirm/Cancel) instead of
+  // the standard Preview button. Another row being previewed leaves this
+  // row with a disabled Preview button — only one preview at a time.
+  const previewBlock = isPreviewing
+    ? el('div', { style: 'margin-top:8px;padding:8px;border:1px solid var(--accent);border-radius:6px' }, [
+        el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, 'Sending to'),
+        el('code', { style: 'display:block;word-break:break-all;margin-bottom:8px' }, preview.to),
+        el('div', { class: 'muted', style: 'font-size:11px' },
+          `${Fmt.sats(preview.sentSats)} sats · fee ${Fmt.sats(preview.fee)} sats (${preview.vsize} bytes)`),
+        renderHexInspector(preview.hex),
+        el('div', { class: 'row' }, [
+          el('button', { onclick: () => Actions.cancelSweepPreview() }, 'Cancel'),
+          el('button', { class: 'primary danger', disabled: s.busy,
+                         onclick: () => Actions.confirmSweepPreview() },
+            s.busy ? 'Broadcasting…' : 'Confirm & broadcast'),
+        ]),
+      ])
+    : null;
   return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' }, [
     el('div', { class: 'muted', style: 'font-size:11px' }, item.path),
     el('code', { style: 'display:block;margin:4px 0' }, item.address),
@@ -969,10 +1020,13 @@ function renderRecoveryRow(s, item, sweepResult) {
       sweepResult
         ? el('span', { class: sweepResult.ok ? 'muted' : 'err', style: 'flex:0 0 auto' },
             sweepResult.ok ? `swept: ${Fmt.shortHash(sweepResult.txid)}` : `error: ${sweepResult.error}`)
-        : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy,
-                         onclick: () => Actions.sweepRecovered(item) },
-            s.busy ? 'Sweeping…' : 'Sweep'),
+        : isPreviewing
+          ? null   // preview block has its own Confirm/Cancel
+          : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy || !!preview,
+                           onclick: () => Actions.previewSweep(item) },
+              preview ? 'Preview busy' : 'Preview'),
     ]),
+    previewBlock,
   ]);
 }
 
@@ -1513,37 +1567,85 @@ const Actions = {
     }
     return state.derived ? state.derived.address : '';
   },
-  async sweepRecovered(item) {
-    const destAddress = Actions._recoveryDest();
-    if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
-    if (!isValidAddress(destAddress)) { Status.error('Destination is not a valid BSV address.'); return; }
-    if (!item || !item.utxos || item.utxos.length === 0) { Status.error('Nothing to sweep.'); return; }
-    setState({ busy: true });
+  // Pure builder (no DOM, no broadcast). Throws on bad inputs or insufficient
+  // funds; otherwise returns a sweep draft: { item, to, hex, sentSats, fee, vsize }.
+  _buildSweepDraft(item, destAddress) {
+    if (!destAddress) throw new Error('No destination — enter or derive an address first.');
+    if (!isValidAddress(destAddress)) throw new Error('Destination is not a valid BSV address.');
+    if (!item || !item.utxos || item.utxos.length === 0) throw new Error('Nothing to sweep.');
+    const priv = bsv.PrivateKey.fromWIF(item.wif);
+    const built = TxBuilder.send({
+      utxos: item.utxos, toAddress: destAddress, sats: 'max',
+      privateKey: priv, fromAddress: item.address,
+    });
+    return {
+      path: item.path, fromAddress: item.address, to: destAddress,
+      hex: built.hex, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
+    };
+  },
+
+  // Broadcast a previously-built sweep draft. Records per-path result so the
+  // recovery row updates row-by-row.
+  async _broadcastSweepDraft(draft) {
     try {
-      const priv = bsv.PrivateKey.fromWIF(item.wif);
-      const draft = TxBuilder.send({
-        utxos: item.utxos, toAddress: destAddress, sats: 'max',
-        privateKey: priv, fromAddress: item.address,
-      });
       const txidRaw = await Net.woc.broadcast(draft.hex);
       const txid = typeof txidRaw === 'string' ? txidRaw.trim().replace(/^"|"$/g, '') : String(txidRaw);
-      // Record per-path sweep result so the row updates without re-rendering everything else.
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
-      swept[item.path] = { ok: true, txid };
-      setState({ busy: false, draft: { ...state.draft, swept } });
-      Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${item.address} → ${Fmt.shortHash(destAddress)}: ${txid}`);
+      swept[draft.path] = { ok: true, txid };
+      setState({ draft: { ...state.draft, swept } });
+      Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${draft.fromAddress} → ${Fmt.shortHash(draft.to)}: ${txid}`);
+      return { ok: true, txid };
     } catch (e) {
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
-      swept[item.path] = { ok: false, error: e.message };
-      setState({ busy: false, draft: { ...state.draft, swept } });
-      Status.error(`Sweep failed: ${e.message}`);
+      swept[draft.path] = { ok: false, error: e.message };
+      setState({ draft: { ...state.draft, swept } });
+      Status.error(`Sweep broadcast failed: ${e.message}`);
+      return { ok: false, error: e.message };
     }
   },
+
+  // Per-row Sweep button: build, but DO NOT broadcast yet. Stash the draft in
+  // state.draft.sweepPreview so the recovery row inline-renders the hex
+  // inspector + Confirm/Cancel. User can copy the hex to WhatsOnChain to
+  // verify, then click Confirm to actually send.
+  async previewSweep(item) {
+    Status.clear();
+    setState({ busy: true });
+    try {
+      const draft = Actions._buildSweepDraft(item, Actions._recoveryDest());
+      setState({
+        busy: false,
+        draft: { ...state.draft, sweepPreview: draft },
+      });
+      Status.info('Sweep transaction built. Review and confirm to broadcast.');
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(e.message);
+    }
+  },
+  cancelSweepPreview() {
+    const next = { ...state.draft }; delete next.sweepPreview;
+    setState({ draft: next });
+    Status.info('Sweep cancelled.');
+  },
+  async confirmSweepPreview() {
+    const d = state.draft && state.draft.sweepPreview;
+    if (!d) { Status.error('No sweep to confirm.'); return; }
+    setState({ busy: true });
+    try {
+      await Actions._broadcastSweepDraft(d);
+    } finally {
+      const next = { ...state.draft }; delete next.sweepPreview;
+      setState({ busy: false, draft: next });
+    }
+  },
+
   // Sweep every still-unswept recovery item to the configured destination.
   // Each item is broadcast as its own transaction (one per source address);
   // we don't combine across paths because each has a different private key.
-  // Failures on one item don't block the others — per-path results are
-  // recorded in state.draft.swept so the UI updates row-by-row.
+  // Bypasses the per-row preview — the destination was already set explicitly
+  // at the top of the panel, and click-through preview for N items would
+  // defeat the bulk action. Failures on one item don't block the others.
   async sweepAllRecovered() {
     const rec = state.recovery;
     if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
@@ -1553,15 +1655,24 @@ const Actions = {
     const swept = (state.draft && state.draft.swept) || {};
     const pending = rec.found.filter(it => !swept[it.path]);
     if (pending.length === 0) { Status.info('All items already swept.'); return; }
-    if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address).`)) return;
+    if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address). No per-item preview — use individual Sweep buttons for that.`)) return;
 
+    setState({ busy: true });
     let ok = 0, fail = 0;
     for (const item of pending) {
-      // sweepRecovered already records per-path success/failure into state.draft.swept
-      await Actions.sweepRecovered(item);
-      const r = (state.draft && state.draft.swept && state.draft.swept[item.path]) || {};
-      if (r.ok) ok++; else fail++;
+      try {
+        const draft = Actions._buildSweepDraft(item, destAddress);
+        const r = await Actions._broadcastSweepDraft(draft);
+        if (r.ok) ok++; else fail++;
+      } catch (e) {
+        // Build failed (e.g., dust after fee on a tiny utxo). Record so row shows error.
+        const sweptNow = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
+        sweptNow[item.path] = { ok: false, error: e.message };
+        setState({ draft: { ...state.draft, swept: sweptNow } });
+        fail++;
+      }
     }
+    setState({ busy: false });
     Status.info(`Sweep-all complete: ${ok} ok, ${fail} failed.`);
   },
 
