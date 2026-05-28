@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-3VYRKJcTnHjNg7xzZnUbr9ngMTvXz/HFfYQCWm5ybnk=' https://cdn.jsdelivr.net;
+    script-src 'sha256-E1WHvRlRAlvx8QjYbAui8Xy0CBeUm+r6sY+SdOV7K1g=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io;
@@ -116,7 +116,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -893,13 +893,56 @@ function renderRecoveryPanel(s) {
   const rec = s.recovery;
   const d = s.derived;
   const swept = (s.draft && s.draft.swept) || {};
+  // Destination field: defaults to the current derived address, but the user
+  // can override (e.g. sweep to a hardware-wallet address). Re-deriving here
+  // so changes to the path panel propagate as the default until the user
+  // edits the input. After edit, the typed value wins (lives in DOM until
+  // explicitly reset).
+  const defaultDest = (s.draft && typeof s.draft.recoveryDest === 'string')
+    ? s.draft.recoveryDest
+    : (d ? d.address : '');
+  const destId = 'recovery-dest';
+  const setDest = () => setState({ draft: { ...state.draft, recoveryDest: $(destId).value.trim() } });
+  const resetDest = () => {
+    if (!d) return;
+    const next = { ...state.draft }; delete next.recoveryDest;
+    setState({ draft: next });
+  };
+
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Recovery sweep'),
-    el('p', { class: 'muted' }, `Scans the first ${RECOVERY_DEPTH} receive + ${RECOVERY_DEPTH} change addresses under the current preset for stray UTXOs. Each found address can be swept to your current receive address.`),
+    el('p', { class: 'muted' }, `Scans the first ${RECOVERY_DEPTH} receive + ${RECOVERY_DEPTH} change addresses under the current preset for stray UTXOs. Edit the destination below before sweeping if you want to send to a different wallet.`),
+
+    // Destination input — visible whenever results exist OR before scanning,
+    // so users see the destination policy up-front.
+    el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+        'Send recovered coins to'),
+      el('div', { class: 'row' }, [
+        el('input', {
+          id: destId, type: 'text', placeholder: 'BSV address (e.g. 1xyz…)',
+          autocomplete: 'off', spellcheck: 'false',
+          value: defaultDest,
+          onchange: setDest,
+        }),
+        el('button', { onclick: resetDest, disabled: !d, style: 'flex:0 0 auto',
+                       title: 'Reset to current derived address' },
+          'Use current'),
+      ]),
+      el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' },
+        d ? `Default: your current derived address ${Fmt.shortHash(d.address)}. Change this field to sweep to any other BSV address you control.`
+          : 'Derive an address first, or paste any BSV address.'),
+    ]),
+
     el('div', { class: 'row', style: 'margin-bottom:8px' }, [
       el('button', { disabled: s.busy, onclick: () => Actions.scanRecovery() },
         s.busy && rec && rec.scanning ? `Scanning… ${rec.done || 0}/${rec.total || ''}`
                                        : (rec ? 'Re-scan' : `Scan first ${RECOVERY_DEPTH} addresses`)),
+      rec && rec.found && rec.found.length > 1
+        ? el('button', { class: 'primary', disabled: s.busy,
+                         onclick: () => Actions.sweepAllRecovered() },
+            s.busy ? 'Sweeping…' : `Sweep all (${rec.found.length})`)
+        : null,
     ]),
     !rec ? null
          : !rec.found || rec.found.length === 0
@@ -910,11 +953,11 @@ function renderRecoveryPanel(s) {
                 ' address(es) with ', el('strong', {}, Fmt.sats(rec.totalSats)),
                 ' sats recoverable.',
               ]),
-              ...rec.found.map((item) => renderRecoveryRow(s, item, d ? d.address : null, swept[item.path])),
+              ...rec.found.map((item) => renderRecoveryRow(s, item, swept[item.path])),
             ]),
   ]);
 }
-function renderRecoveryRow(s, item, destAddr, sweepResult) {
+function renderRecoveryRow(s, item, sweepResult) {
   return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' }, [
     el('div', { class: 'muted', style: 'font-size:11px' }, item.path),
     el('code', { style: 'display:block;margin:4px 0' }, item.address),
@@ -926,9 +969,9 @@ function renderRecoveryRow(s, item, destAddr, sweepResult) {
       sweepResult
         ? el('span', { class: sweepResult.ok ? 'muted' : 'err', style: 'flex:0 0 auto' },
             sweepResult.ok ? `swept: ${Fmt.shortHash(sweepResult.txid)}` : `error: ${sweepResult.error}`)
-        : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy || !destAddr,
-                         onclick: () => Actions.sweepRecovered(item, destAddr) },
-            s.busy ? 'Sweeping…' : 'Sweep to current address'),
+        : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy,
+                         onclick: () => Actions.sweepRecovered(item) },
+            s.busy ? 'Sweeping…' : 'Sweep'),
     ]),
   ]);
 }
@@ -1462,8 +1505,18 @@ const Actions = {
       Status.error(`Recovery scan failed: ${e.message}`);
     }
   },
-  async sweepRecovered(item, destAddress) {
-    if (!destAddress) { Status.error('No destination address — derive one first.'); return; }
+  // Resolves the recovery destination: user-edited value in state.draft if
+  // any, else the current derived address. Returns the trimmed string (or '').
+  _recoveryDest() {
+    if (state.draft && typeof state.draft.recoveryDest === 'string') {
+      return state.draft.recoveryDest.trim();
+    }
+    return state.derived ? state.derived.address : '';
+  },
+  async sweepRecovered(item) {
+    const destAddress = Actions._recoveryDest();
+    if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
+    if (!isValidAddress(destAddress)) { Status.error('Destination is not a valid BSV address.'); return; }
     if (!item || !item.utxos || item.utxos.length === 0) { Status.error('Nothing to sweep.'); return; }
     setState({ busy: true });
     try {
@@ -1478,13 +1531,38 @@ const Actions = {
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[item.path] = { ok: true, txid };
       setState({ busy: false, draft: { ...state.draft, swept } });
-      Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${item.address}: ${txid}`);
+      Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${item.address} → ${Fmt.shortHash(destAddress)}: ${txid}`);
     } catch (e) {
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[item.path] = { ok: false, error: e.message };
       setState({ busy: false, draft: { ...state.draft, swept } });
       Status.error(`Sweep failed: ${e.message}`);
     }
+  },
+  // Sweep every still-unswept recovery item to the configured destination.
+  // Each item is broadcast as its own transaction (one per source address);
+  // we don't combine across paths because each has a different private key.
+  // Failures on one item don't block the others — per-path results are
+  // recorded in state.draft.swept so the UI updates row-by-row.
+  async sweepAllRecovered() {
+    const rec = state.recovery;
+    if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
+    const destAddress = Actions._recoveryDest();
+    if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
+    if (!isValidAddress(destAddress)) { Status.error('Destination is not a valid BSV address.'); return; }
+    const swept = (state.draft && state.draft.swept) || {};
+    const pending = rec.found.filter(it => !swept[it.path]);
+    if (pending.length === 0) { Status.info('All items already swept.'); return; }
+    if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address).`)) return;
+
+    let ok = 0, fail = 0;
+    for (const item of pending) {
+      // sweepRecovered already records per-path success/failure into state.draft.swept
+      await Actions.sweepRecovered(item);
+      const r = (state.draft && state.draft.swept && state.draft.swept[item.path]) || {};
+      if (r.ok) ok++; else fail++;
+    }
+    Status.info(`Sweep-all complete: ${ok} ok, ${fail} failed.`);
   },
 
   // ---- export: re-verify password before revealing mnemonic + passphrase

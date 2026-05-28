@@ -72,7 +72,14 @@
 
   <h2>Recovery sweep</h2>
   <div class="panel">
-    <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. Bitails serves the multi-address lookup. Each found address shows a <em>Sweep to current address</em> button that consolidates its UTXOs into your current receive address with one transaction.</p>
+    <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. Bitails serves the multi-address lookup.</p>
+    <p>The <em>Send recovered coins to</em> field at the top of the panel sets where the sweep transactions go:</p>
+    <ul>
+      <li>Defaults to your <strong>current derived address</strong> (whatever the path panel above shows).</li>
+      <li>Edit it to send to any other BSV address you control — for example, a hardware-wallet address, an exchange deposit address, or a different account in this wallet.</li>
+      <li><em>Use current</em> resets the field to the active derived address.</li>
+    </ul>
+    <p>Each found address has its own <em>Sweep</em> button (one tx per source address — they must be signed by different keys, so they can't be combined into one transaction). When there are 2 or more matches, a <em>Sweep all</em> button at the top broadcasts a sweep for each in sequence; per-address results display next to each row.</p>
   </div>
 
   <h2>Export &amp; backup</h2>
