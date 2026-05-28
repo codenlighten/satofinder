@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-FSy1T+//erIV3Vjf7iJGkMFmnvO+v1tJOSryZjkuXwc=' https://cdn.jsdelivr.net;
+    script-src 'sha256-K8wImv6r0qdo8cR/OisD112Oki8Z9ZfKJj+W6bY2Rk0=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io;
@@ -116,7 +116,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.3.0';
+const VERSION = '2.3.1';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -1275,22 +1275,23 @@ const Actions = {
   // ---- create flow
   startCreate(entropyBits) {
     try {
-      // bsv.Mnemonic.fromRandom() defaults to 128-bit; pass explicit bits if SDK
-      // accepts a length arg. Fallback: regenerate until word count matches.
-      let m;
-      if (entropyBits === 256) {
-        // Try API variants; if neither works, fall through to default.
-        m = (bsv.Mnemonic.fromRandom && bsv.Mnemonic.fromRandom.length >= 1)
-          ? bsv.Mnemonic.fromRandom(entropyBits)
-          : bsv.Mnemonic.fromRandom();
-        // Validate word count; if mismatch, just use whatever the SDK gave us.
-      } else {
-        m = bsv.Mnemonic.fromRandom();
-      }
+      // bsv.Mnemonic.fromRandom(bits) takes an entropy bit count: 128/160/192/
+      // 224/256 -> 12/15/18/21/24 words. The function's declared .length is 0
+      // (minified varargs), so do NOT guard on .length — just pass the bits.
+      const bits = (entropyBits === 256 || entropyBits === 224 || entropyBits === 192
+                 || entropyBits === 160 || entropyBits === 128) ? entropyBits : 128;
+      const m = bsv.Mnemonic.fromRandom(bits);
       const phrase = m.toString();
+      // Sanity: BIP39 word counts per entropy bits. If the SDK ever ignored
+      // our arg, surface it rather than silently shipping the wrong size.
+      const expectedWords = { 128:12, 160:15, 192:18, 224:21, 256:24 }[bits];
+      const gotWords = phrase.split(/\s+/).length;
+      if (gotWords !== expectedWords) {
+        throw new Error(`SDK returned ${gotWords} words; expected ${expectedWords} for ${bits}-bit entropy`);
+      }
       setState({
         view: 'create', step: 'show',
-        draft: { mnemonic: phrase, source: 'create' },
+        draft: { mnemonic: phrase, source: 'create', entropyBits: bits },
       });
     } catch (e) {
       Status.error(`Could not generate mnemonic: ${e.message}`);
