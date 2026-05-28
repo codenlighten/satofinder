@@ -1,0 +1,18 @@
+# Build outputs
+dist/
+node_modules/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.bak
+*.log
+
+# Local env / secrets
+.env
+.env.*
+
+# Scratch
+_test_*.html

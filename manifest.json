@@ -1,21 +1,15 @@
 {
+  "name": "SatoFinder — BSV Wallet Tool",
   "short_name": "SatoFinder",
-  "name": "SatoFinder - BSV Tool",
-  "icons": [
-    {
-      "src": "logo2.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "logo2.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ],
-  "start_url": "/",
-  "background_color": "#ffffff",
+  "description": "Single-file, auditable BSV wallet with encrypted local key storage, BIP32/BIP44 derivation, send, and coin recovery. By SmartLedger Technology.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "scope": "/",
-  "theme_color": "#0056b3"
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "publisher": "SmartLedger Technology",
+  "icons": [
+    { "src": "logo2.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "logo2.png", "sizes": "512x512", "type": "image/png" }
+  ]
 }

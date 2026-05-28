@@ -1,243 +1,83 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SatoFinder Help Page</title>
-    <style>
-      body {
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 16px;
-        line-height: 1.6;
-        color: #333;
-        background-color: #f4f4f4;
-        padding: 10px;
-      }
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SatoFinder — Help</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none';">
+  <style>
+    :root{--bg:#0b0b0c;--panel:#141416;--border:#26262a;--muted:#9aa0a6;--fg:#e6e6e6;--accent:#7cd992;--warn:#f5c66b;--err:#ff6b6b;--link:#7cb6ff}
+    body{font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);color:var(--fg);margin:0;padding:24px 16px}
+    main{max-width:720px;margin:0 auto}
+    h1{color:var(--accent);font-size:20px}
+    h2{color:var(--accent);font-size:14px;text-transform:uppercase;letter-spacing:1px;margin-top:32px}
+    a{color:var(--link)}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin:16px 0}
+    code{background:#0e0e10;padding:2px 6px;border-radius:4px}
+    .warn{color:var(--warn)}
+    .err{color:var(--err)}
+    ul{padding-left:18px}
+  </style>
+</head>
+<body>
+<main>
+  <h1>SatoFinder Help</h1>
+  <p class="muted">A single-file, fully client-side BSV wallet by <a href="https://smartledger.technology" target="_blank" rel="noopener noreferrer">SmartLedger Technology</a>. Everything runs in your browser; no server sees your keys.</p>
 
-      #container {
-        max-width: 800px;
-        margin: auto;
-        background: #fff;
-        padding: 20px;
-      }
+  <h2>Security model</h2>
+  <div class="panel">
+    <ul>
+      <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (310,000 iter) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
+      <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
+      <li>The app loads <code>@smartledger/bsv@3.4.3</code> from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong>. A compromised CDN cannot ship modified code.</li>
+      <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to <code>api.whatsonchain.com</code> and <code>api.bitails.io</code>.</li>
+      <li>The wallet auto-locks after 10 minutes of inactivity, and immediately when the tab is hidden. Private key / mnemonic are cleared from memory.</li>
+      <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
+    </ul>
+  </div>
 
-      h1 {
-        margin-top: 0;
-        text-align: center;
-      }
+  <h2>First run</h2>
+  <div class="panel">
+    <p>On first visit you get three choices:</p>
+    <ul>
+      <li><strong>Create new wallet</strong>: pick 12-word or 24-word entropy, write down the mnemonic, confirm by re-typing the last word, set a password.</li>
+      <li><strong>Import mnemonic</strong>: paste an existing 12/24-word BIP39 phrase, set a password.</li>
+      <li><strong>Unlock</strong> (only if a vault already exists on this device).</li>
+    </ul>
+    <p class="warn">Write your mnemonic on paper. Do not screenshot or email it.</p>
+  </div>
 
-      h2 {
-        margin-top: 0;
-      }
+  <h2>Derivation</h2>
+  <div class="panel">
+    <p>SatoFinder supports both <strong>BIP32</strong> (<code>m/0'/external'/index'</code>) and <strong>BIP44</strong> (<code>m/44'/coin'/account'/change/index</code>) paths.</p>
+    <p>The <em>Wallet preset</em> dropdown picks the right coin / account index for popular BSV wallets (Atomic, Exodus, Keevo, MoneyButton, RelayX, SimplyCash, Twetch). Editing any path field marks the preset as "custom".</p>
+  </div>
 
-      ul {
-        list-style: none;
-        padding: 0;
-      }
+  <h2>Send</h2>
+  <div class="panel">
+    <p>Enter the recipient address and amount (in satoshis). Click <em>Build transaction</em>. The app fetches UTXOs from WhatsOnChain, builds and signs the transaction using a two-pass fee calculation (no under-fee bugs), and shows you the full transaction (destination, amount, fee, change, raw hex) before you confirm.</p>
+    <p>Nothing leaves your browser until you click <em>Confirm &amp; broadcast</em>.</p>
+  </div>
 
-      li {
-        margin-bottom: 10px;
-        font-size: 18px;
-      }
+  <h2>Recovery sweep</h2>
+  <div class="panel">
+    <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. Bitails serves the multi-address lookup. Each found address shows a <em>Sweep to current address</em> button that consolidates its UTXOs into your current receive address with one transaction.</p>
+  </div>
 
-      a {
-        color: #333;
-      }
+  <h2>Export &amp; backup</h2>
+  <div class="panel">
+    <p>The <em>Export mnemonic</em> panel re-asks for your password before revealing the mnemonic (so a casual onlooker can't read it). You can also download an encrypted backup file (<code>satofinder-vault-…json</code>) — useless without your password, safe to email or archive.</p>
+  </div>
 
-      .btn {
-        display: inline-block;
-        padding: 10px 15px;
-        background: #333;
-        color: #fff;
-        border: 0;
-        cursor: pointer;
-      }
+  <h2>Disclaimer</h2>
+  <div class="panel">
+    <p class="warn">SatoFinder is provided as-is, free, with no warranty. The author is not responsible for any loss of funds. Always verify the raw transaction hex before broadcasting if you are moving significant value, and test with small amounts first.</p>
+  </div>
 
-      .btn:hover {
-        background: #444;
-      }
-
-      .btn.btn-primary {
-        background: #333;
-      }
-
-      .btn.btn-primary:hover {
-        background: #444;
-      }
-
-      .btn.btn-block {
-        display: block;
-        width: 100%;
-      }
-
-      .btn.btn-block:hover {
-        background: #444;
-      }
-
-      input[type="text"],
-      input[type="email"],
-      input[type="password"] {
-        display: block;
-        width: 100%;
-        padding: 10px;
-        margin-bottom: 15px;
-        border: 1px solid #ccc;
-      }
-
-      input[type="radio"] {
-        margin: 0 5px 0 0;
-      }
-
-      label {
-        display: block;
-        margin-bottom: 5px;
-      }
-
-      .error {
-        color: red;
-      }
-
-      #logo {
-        display: block;
-        margin: auto;
-        width: 200px;
-      }
-
-      #home {
-        display: block;
-        margin: auto;
-        width: 200px;
-        padding: 10px;
-        background: #333;
-        color: #fff;
-        border: 0;
-        cursor: pointer;
-      }
-
-      #home:hover {
-        background: #444;
-      }
-
-      /* Media Queries */
-      @media (max-width: 768px) {
-        body {
-          background: #fff;
-        }
-
-        #container {
-          max-width: 500px;
-          margin: auto;
-          background: #fff;
-          padding: 20px;
-        }
-        #logo {
-          display: block;
-          margin: auto;
-          width: 200px;
-        }
-        #home {
-          display: block;
-          margin: auto;
-          width: 200px;
-          padding: 10px;
-          background: #333;
-          color: #fff;
-          border: 0;
-          cursor: pointer;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="container">
-      <img src="logo2.png" alt="" id="logo" />
-      <h1>Welcome to SatoFinder</h1>
-      <p>
-        SatoFinder is a user-friendly tool designed to generate Bitcoin SV (BSV)
-        mnemonics, keys, and addresses, facilitate coin recovery, and enable BSV
-        transactions.
-      </p>
-
-      <h2>Getting Started</h2>
-      <ol>
-        <li>
-          <strong>Choose BIP Protocol:</strong> Select between BIP32 and BIP44
-          to determine the hierarchical deterministic path.
-        </li>
-        <li>
-          <strong>Set Path Parameters:</strong> Depending on the chosen
-          protocol, set the path parameters. For BIP32, adjust 'Path:
-          m/0'/0'/X', and for BIP44, set 'Path: m/44'/0'/X'/0/X'.
-        </li>
-        <li>
-          <strong>Generate New Mnemonic:</strong> Click 'Generate New Mnemonic'
-          to create a new mnemonic phrase, which will also generate the
-          associated private key, public key, and BSV address.
-        </li>
-      </ol>
-
-      <h2>Key Features</h2>
-      <ul>
-        <li>
-          <strong>Balance Check:</strong> Use 'Current Address Balance' to view
-          the balance of the generated address.
-        </li>
-        <li>
-          <strong>Store Keys Locally:</strong> Click 'Store Keys Locally' to
-          save your keys securely on your device.
-        </li>
-        <li>
-          <strong>Send BSV:</strong> Input the recipient's address and the
-          amount to send BSV. Click 'Generate Transaction' to prepare the
-          transaction.
-        </li>
-      </ul>
-
-      <h2>Advanced Options</h2>
-      <ul>
-        <li>
-          <strong>Import Mnemonic:</strong> If you have an existing mnemonic,
-          input it in the 'Import Mnemonic' section and import it to retrieve
-          associated keys.
-        </li>
-        <li>
-          <strong>Export Keys:</strong> Use the 'Export Keys' feature to
-          download your keys as a JSON file.
-        </li>
-        <li>
-          <strong>Recover Coins:</strong> Click on 'Recover Coins' to attempt
-          recovery of coins from the first 50 addresses based on the mnemonic.
-        </li>
-      </ul>
-
-      <h2>Tips and Donations</h2>
-      <p>
-        <strong>Leave a Tip:</strong> If you find SatoFinder helpful, you can
-        leave a tip at the provided BSV address. Enter the tip amount in
-        satoshis and click 'Tip' to send your support.
-      </p>
-
-      <h2>Safety and Security</h2>
-      <ul>
-        <li>Always backup your mnemonic phrase securely.</li>
-        <li>Do not share your private keys with anyone.</li>
-        <li>
-          Regularly check for updates and use the latest version of SatoFinder.
-        </li>
-      </ul>
-      <h2>Disclaimer</h2>
-      <p>
-        SatoFinder is a free tool and is provided as is. The author is not
-        responsible for any loss of funds or damages resulting from the use of
-        this tool. Use at your own risk. We encourage checking the transaction
-        hex before broadcasting so you can verify the transaction details.
-      </p>
-      <button id="home">Back Home</button>
-    </div>
-    <script>
-      document.getElementById("home").addEventListener("click", function () {
-        window.location.href = "/";
-      });
-    </script>
-  </body>
+  <p><a href="index.html">← Back to wallet</a></p>
+  <p class="muted" style="margin-top:32px;text-align:center">
+    &copy; <a href="https://smartledger.technology" target="_blank" rel="noopener noreferrer">SmartLedger Technology</a>
+  </p>
+</main>
+</body>
 </html>

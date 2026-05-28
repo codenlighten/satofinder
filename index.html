@@ -1,2114 +1,1551 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>
-      SatoFinder - a simple tool to generate BSV mnemonic, keys, and addresses,
-      recover coins, and send BSV
-    </title>
-    <!-- meta description -->
-    <!-- favicon logo.png-->
-    <link rel="icon" href="logo2.png" />
-    <meta
-      name="description"
-      content="SatoFinder is a simple tool to generate BSV mnemonic, keys, and addresses, recover coins, and send BSV"
-    />
-    <!-- meta keywords -->
-    <meta
-      name="keywords"
-      content="BSV, Bitcoin SV, Mnemonic Generation, BSV Wallet, BSV Address, Bitcoin Tools"
-    />
-    <!-- meta author codenlighten-->
-    <meta name="author" content="codenlighten" />
-    <!-- twitter -->
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:site" content="@codenlighten" />
-    <meta name="twitter:creator" content="@codenlighten" />
-    <meta
-      name="twitter:title"
-      content="SatoFinder - SatoFinder is a simple tool to generate BSV mnemonic, keys, and addresses, recover coins, and send BSV"
-    />
-    <!-- logo.png -->
-    <meta name="twitter:image" content="logo2.png" />
-    <meta
-      name="twitter:description"
-      content="SatoFinder is a simple tool to generate BSV mnemonic, keys, and addresses, recover coins, and send BSV."
-    />
-
-    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-message.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-mnemonic.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bsv@1.5.0/bsv-ecies.min.js"></script>
-    <link rel="manifest" href="/manifest.json" />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      /* Basic Reset */
-      /* Basic Reset */
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: "Courier New", Courier, monospace;
-        font-size: 16px;
-        line-height: 1.6;
-        color: #333333;
-        background-color: #ffffff;
-        padding: 20px;
-        word-wrap: break-word;
-        background-image: url("logo.png");
-      }
-
-      /* Global Styles */
-      h1,
-      h2 {
-        margin-bottom: 20px;
-        color: #0056b3; /* Example Primary Color */
-      }
-
-      p {
-        margin-bottom: 15px;
-      }
-
-      button {
-        /* display: block; */
-        margin: 15px auto;
-        padding: 12px 15px;
-        border: none;
-        border-radius: 5px;
-        background-color: #0056b3; /* Example Primary Color */
-        color: #ffffff;
-        cursor: pointer;
-        transition: background-color 0.3s;
-        width: 45%;
-        max-width: 400px;
-      }
-
-      button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      input[type="number"],
-      input[type="text"] {
-        display: inline;
-        margin-bottom: 15px;
-        padding: 10px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        transition: border-color 0.3s;
-        width: 75px;
-      }
-
-      input[type="number"]:focus,
-      input[type="text"]:focus {
-        outline: none;
-        border-color: #0056b3; /* Example Primary Color */
-      }
-      #mainContainer {
-        max-width: 600px;
-        margin: 0 auto;
-        background-color: #ffffff;
-        padding: 20px;
-        border: 2px solid #eab300;
-        border-radius: 5px;
-      }
-
-      .container {
-        margin-bottom: 20px;
-        padding: 20px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        background-color: #f9f9f9; /* Light Background for Container */
-        width: 100%;
-        /* max-width: 600px; */
-        word-wrap: break-word;
-        background-color: #ffffff;
-        margin: 0 auto;
-      }
-      /* mnemonic import input */
-      #mnemonicImport {
-        width: 100%;
-        margin-bottom: 15px;
-        padding: 10px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        transition: border-color 0.3s;
-      }
-      #title {
-        text-align: center;
-        margin-bottom: 20px;
-        text-shadow: 2px 2px 4px #000000;
-        font-size: 3rem;
-        font-weight: bolder;
-        font-family: "Montserrat", sans-serif;
-      }
-      #changePath {
-        display: inline;
-        font-weight: bolder;
-      }
-      #currentPath {
-        font-weight: bolder;
-      }
-
-      #copy {
-        display: inline;
-      }
-      #description {
-        text-align: center;
-        margin-bottom: 20px;
-        font-size: 1rem;
-        font-weight: bolder;
-        font-family: "Montserrat", sans-serif;
-      }
-      #logo {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      /* send bsv */
-      #sendBsv {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        /* max-width: 400px; */
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-      #sendBsv p {
-        font-weight: bolder;
-      }
-      #sendBsv input {
-        width: 100%;
-        margin-bottom: 15px;
-        padding: 10px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        transition: border-color 0.3s;
-      }
-      #sendBsv input:focus {
-        outline: none;
-        border-color: #0056b3; /* Example Primary Color */
-      }
-      #sendBsv button {
-        display: block;
-        margin: 0 auto;
-        width: 100%;
-        max-width: 400px;
-      }
-      /* hover */
-      #sendBsv button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #importMnemonic {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        /* max-width: 400px; */
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-
-      #importMnemonic p {
-        font-weight: bolder;
-      }
-
-      #importMnemonic input {
-        width: 100%;
-        margin-bottom: 15px;
-        padding: 10px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        transition: border-color 0.3s;
-      }
-
-      #importMnemonic input:focus {
-        outline: none;
-        border-color: #0056b3; /* Example Primary Color */
-      }
-
-      #importMnemonic button {
-        display: block;
-        margin: 0 auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #importMnemonic button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      .buttons {
-        display: flex;
-        justify-content: space-between;
-        flex-wrap: wrap;
-      }
-      .buttons button {
-        width: 45%;
-        max-width: 400px;
-      }
-      #keys {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        /* max-width: 400px; */
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-      #newMnemonics {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #storeKeysLocally:hover {
-        background-color: green; /* Darker Shade for Hover */
-      }
-      #mnemonic {
-        background-color: #f9f9f9;
-        padding: 10px;
-        border-radius: 5px;
-      }
-      #mnemonic:hover {
-        cursor: pointer;
-        background-color: #cccccc;
-      }
-
-      #bsv {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 100px;
-        border: black solid 3px;
-        border-radius: 50%;
-        padding: 12px;
-        background-color: #003d82;
-        transition: transform 0.5s;
-      }
-      /* #bsv translate flip y axis when hover  and transition back when not hover */
-      #bsv:hover {
-        transform: rotateY(180deg);
-        transition: transform 0.5s;
-        background-color: #000000;
-        border: white solid 3px;
-      }
-      #bsv:hover {
-        cursor: pointer;
-      }
-
-      #addresses {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        /* max-width: 400px; */
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #addresses button {
-        display: block;
-        margin: 0 auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #addresses button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      /* kyc */
-      #registerKYC {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #recoverCoins {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #recoverCoins button {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #recoverCoins button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #recoverCoins p {
-        font-weight: bolder;
-      }
-
-      #exportKeys {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #exportKeys button {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #exportKeys button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #exportKeys p {
-        font-weight: bolder;
-      }
-
-      /* tip */
-      #tip {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #tip p {
-        font-weight: bolder;
-      }
-
-      #tip input {
-        width: 100%;
-        margin-bottom: 15px;
-        padding: 10px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        transition: border-color 0.3s;
-      }
-
-      #tip input:focus {
-        outline: none;
-        border-color: #0056b3; /* Example Primary Color */
-      }
-
-      #tip button {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #tip button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #tip #tipResult {
-        font-weight: bolder;
-      }
-
-      #generateNewMnemonic {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #generateNewMnemonic button {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #generateNewMnemonic button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #help {
-        text-align: center;
-        font-weight: bolder;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-      #help a {
-        font-weight: bolder;
-        text-decoration: none;
-        color: #0056b3;
-      }
-
-      #transactionHistory {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-        font-weight: bolder;
-      }
-
-      #transactionHistory button {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-      }
-
-      #transactionHistory button:hover {
-        background-color: #003d82; /* Darker Shade for Hover */
-      }
-
-      #transactionHistory p {
-        font-weight: bolder;
-      }
-
-      #historyResult {
-        font-weight: bolder;
-      }
-
-      #walletType {
-        display: block;
-        margin: 6px auto;
-        width: 100%;
-        max-width: 400px;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 10px;
-        font-weight: bolder;
-      }
-
-      #walletType option {
-        font-weight: bolder;
-      }
-
-      #currentPrice {
-        text-align: center;
-        font-weight: bolder;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-
-      #currentBalance {
-        text-align: center;
-        font-weight: bolder;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-
-      #currentBalanceForTips {
-        text-align: center;
-        font-weight: bolder;
-        border: 1px solid #cccccc;
-        border-radius: 5px;
-        padding: 20px;
-      }
-
-      /* Media Queries */
-      @media screen and (max-width: 600px) {
-        .container {
-          padding: 10px;
-        }
-        input[type="number"],
-        input[type="text"] {
-          width: 100%;
-        }
-        button {
-          display: block;
-          width: 100%;
-        }
-        #bsv {
-          display: block;
-          margin: 6px auto;
-          width: 100%;
-          max-width: 90px;
-          border: #003d82 solid 3px;
-          border-radius: 50%;
-          padding: 12px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="mainContainer">
-      <h1 id="title">SatoFinder</h1>
-      <img src="bsv.png" alt="" id="bsv" />
-      <p id="description">
-        Easily generate mnemonic, private key, public key, and address for the
-        BSV blockchain. Recover Coins, and Send BSV.
-      </p>
-      <p id="currentPrice"></p>
-      <p>
-        <input
-          type="radio"
-          id="bip32"
-          name="bip"
-          value="32"
-          checked="checked"
-          onclick="bipChoice = '32'"
-        />
-        <label for="bip32">BIP32</label>
-        <input
-          type="radio"
-          id="bip44"
-          name="bip"
-          value="44"
-          onclick="bipChoice = '44'"
-        />
-        <label for="bip44">BIP44</label>
-      </p>
-      <p>
-        <span id="changePath32">
-          Path: m/0'/<input
-            type="number"
-            id="path1a"
-            min="0"
-            max="1"
-            value="0"
-          />'/<input type="number" id="path2a" min="0" value="0" />'
-        </span>
-        <span id="changePath"
-          >Path: m/44'/<input
-            type="number"
-            id="coinPath"
-            min="0"
-            value="0"
-          />'/<input type="number" id="path1" min="0" value="0" />'/<input
-            type="number"
-            id="path2"
-            min="0"
-            max="1"
-            value="0"
-          />/<input type="number" id="path3" min="0" value="0" />
-        </span>
-      </p>
-      <select name="" id="walletType">
-        <option value="null">Choose Wallet</option>
-        <option value="bip44" id="basicBip44">Default(BIP44)</option>
-        <option value="bip32">BIP32 Basic</option>
-        <option value="atomic">Atomic</option>
-        <option value="exodus">Exodus</option>
-        <option value="keevo">Keevo</option>
-        <option value="moneybutton">MoneyButton</option>
-        <option value="relayx">RelayX</option>
-        <option value="simplycash">SimplyCash</option>
-        <option value="twetch">Twetch</option>
-      </select>
-      <p id="currentPath"></p>
-      <div id="keys">
-        <p title="click to copy mnemonic to clipboard" id="mnemonic"></p>
-        <p id="privateKey"></p>
-        <p id="publicKey"></p>
-        <p id="address"></p>
-        <p id="changeStatus"></p>
-        <p id="balance"></p>
-        <button id="hidePrivateKeys">Hide Private Keys</button>
-      </div>
-      <div class="buttons">
-        <button id="getBalance">Current Address Balance</button>
-        <button id="storeKeysLocally">Store Keys Locally</button>
-      </div>
-      <div id="sendBsv">
-        <p>Send BSV</p>
-        <p id="currentAddress"></p>
-        <p id="currentBalance"></p>
-        <input placeholder="address" type="text" id="addressSend" />
-        <input placeholder="amount" type="number" id="amountSend" />
-        <button id="send">Generate Transaction</button>
-        <div id="resultTxid"></div>
-      </div>
-      <div class="container" id="recoverCoins">
-        <h2>Recover Coins from 1st 50 Addresses</h2>
-        <button id="recover">Recover Coins</button>
-        <div id="recoverResult"></div>
-      </div>
-      <div class="container" id="transactionHistory">
-        <h2>Transaction History</h2>
-        <button id="history">Transaction History</button>
-        <div id="historyResult"></div>
-      </div>
-      <div class="container" id="exportKeys">
-        <h2>Export Keys</h2>
-        <button id="export">Export</button>
-        <div id="exportResult"></div>
-      </div>
-      <div class="container" id="generateNewMnemonic">
-        <h2>Generate New Mnemonic</h2>
-        <button id="newMnemonics">Generate New Mnemonic</button>
-      </div>
-      <div class="container" id="importMnemonic">
-        <h2>Import Mnemonic</h2>
-        <input placeholder="mnemonic" type="text" id="mnemonicImport" />
-        <button id="import">Import</button>
-      </div>
-      <!-- leave a tip -->
-      <div class="container" id="tip">
-        <h2>Leave a Tip</h2>
-        <p>
-          If you find this tool useful, please consider leaving a tip. Thank
-          you.
-        </p>
-        <p>
-          Tipping Address:
-          <a href="bitcoin:1Nqo2xV54jUzo6jMVJ63btWmSkpAibb2oc" target="_blank"
-            >1Nqo2xV54jUzo6jMVJ63btWmSkpAibb2oc</a
-          >
-        </p>
-        <p id="currentBalanceForTips"></p>
-
-        <input
-          type="text"
-          placeholder="tip amount in satoshis"
-          id="tipAmount"
-        />
-        <button id="tipButton">Tip</button>
-        <div id="tipResult"></div>
-      </div>
-      <!-- click here for help.html -->
-      <p id="help">
-        <a href="help.html" target="_blank">Click here for help</a>
-      </p>
-      <!-- copyright codenlighten 2024 -->
-      <p id="copyright" style="text-align: center; font-weight: bolder">
-        &copy; 2024 Codenlighten & SmartLedger. All rights reserved.
-      </p>
-
-      <!-- satofinder.com -->
-      <p id="satofinder" style="text-align: center; font-weight: bolder">
-        <a href="https://satofinder.com" target="_blank"
-          >https://satofinder.com</a
-        >
-      </p>
-    </div>
-    <script>
-      const tippingAddress = "1Nqo2xV54jUzo6jMVJ63btWmSkpAibb2oc";
-      const Buffer = bsv.deps.Buffer;
-      const hash = bsv.crypto.Hash;
-      const ECIES = bsv.crypto.ECIES;
-      let mnemonicString = "";
-      let keys = {};
-      let path = "m/44'/0'/0'/0/0";
-      let changePath = 0;
-
-      let accountPath = 0;
-      let bipChoice = "44";
-      // next receiving address
-      let index = 0;
-      let generated21 = false;
-      let history = false;
-      //clear all paths
-      document.getElementById("path1").value = 0;
-      document.getElementById("path2").value = 0;
-      document.getElementById("path3").value = 0;
-      document.getElementById("coinPath").value = 0;
-      // generate keys
-      const generateKeys32 = (external, path) => {
-        path = `m/0'/${external}'/${path}'`;
-        if (mnemonicString == "") {
-          mnemonicString = bsv.Mnemonic.fromRandom().toString();
-        }
-        const mnemonic = bsv.Mnemonic.fromString(mnemonicString);
-        mnemonicString = mnemonic.toString();
-        const seed = mnemonic.toSeed();
-        const root = bsv.HDPrivateKey.fromSeed(seed);
-        const child = root.deriveChild(path);
-        const privateKey = child.privateKey;
-        const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-        const address = bsv.Address.fromPublicKey(publicKey);
-        keys = {
-          mnemonic: mnemonic.toString(),
-          privateKey: privateKey.toString(),
-          publicKey: publicKey.toString(),
-          address: address.toString(),
-          path: path,
-          bip: bipChoice,
-        };
-        const keysHash = hash.sha256(Buffer.from(JSON.stringify(keys)));
-        keys.keysHash = keysHash.toString("hex");
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-        return keys;
-      };
-      const generateKeys = (coin = 0, p = 0, q = 0, r = 0, m = false) => {
-        path = `m/44'/${coin}'/${p}'/${q}/${r}`;
-        if (mnemonicString == "" || m) {
-          mnemonicString = bsv.Mnemonic.fromRandom().toString();
-        }
-
-        const mnemonic = bsv.Mnemonic.fromString(mnemonicString);
-        mnemonicString = mnemonic.toString();
-        const seed = mnemonic.toSeed();
-        const root = bsv.HDPrivateKey.fromSeed(seed);
-        const child = root.deriveChild(path);
-        const privateKey = child.privateKey;
-        const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-        const address = bsv.Address.fromPublicKey(publicKey);
-        keys = {
-          mnemonic: mnemonic.toString(),
-          privateKey: privateKey.toString(),
-          publicKey: publicKey.toString(),
-          address: address.toString(),
-          path: path,
-          bip: bipChoice,
-        };
-        const keysHash = hash.sha256(Buffer.from(JSON.stringify(keys)));
-        keys.keysHash = keysHash.toString("hex");
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-        return keys;
-      };
-      // generate mnemonic
-      const generateMnemonic = () => {
-        if (bipChoice == "32") {
-          const external = document.getElementById("path1a").value;
-          const path = document.getElementById("path2a").value;
-          keys = generateKeys32(external, path);
-          console.log(keys);
-
-          return keys.mnemonic;
-        } else {
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          const path2 = document.getElementById("path2").value;
-          const path3 = document.getElementById("path3").value;
-          keys = generateKeys(coinPath, path1, path2, path3, true);
-          console.log(keys);
-
-          return keys.mnemonic;
-        }
-      };
-
-      //default wallettype
-      let walletType = "null";
-      // wallet type change
-      document.getElementById("walletType").value = walletType;
-
-      // generate keys click
-      document.getElementById("newMnemonics").addEventListener("click", () => {
-        mnemonicString = generateMnemonic();
-        document.getElementById("mnemonic").innerHTML = mnemonicString;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        //current path
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-        // highlight store keys locally
-        document.getElementById("storeKeysLocally").disabled = false;
-        //change color of store keys locally
-        document.getElementById("storeKeysLocally").style.backgroundColor =
-          "green";
-        document.getElementById("keys").scrollIntoView();
-        alert(
-          "Click on store keys to store locally. Please write down mnemonic and store somewhere safe: " +
-            keys.mnemonic
-        );
-      });
-
-      const getBalance = async (address) => {
-        const response = await fetch(
-          `https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`
-        );
-        const data = await response.json();
-        return data;
-      };
-      // get current BSV price
-      let currentPrice = 0;
-      const getCurrentPrice = async () => {
-        const response = await fetch(
-          `https://api.whatsonchain.com/v1/bsv/main/exchangerate`
-        );
-        const data = await response.json();
-        return data;
-      };
-      // get current price
-      getCurrentPrice().then((data) => {
-        console.log(data);
-        currentPrice = data.rate;
-        document.getElementById(
-          "currentPrice"
-        ).innerHTML = `Current BSV Price: ${data.rate.toFixed(2)} USD`;
-      });
-      document
-        .getElementById("getBalance")
-        .addEventListener("click", async () => {
-          if (!keys.address) {
-            alert("Generate keys first.");
-            return;
-          }
-          if (!keys.address) {
-            if (localStorage.getItem("keys")) {
-              keys = JSON.parse(localStorage.getItem("keys"));
-            } else {
-              alert("Generate keys first.");
-              return;
-            }
-          }
-          const balance = await getBalance(keys.address);
-          console.log(balance);
-          const total = balance.confirmed + balance.unconfirmed;
-          const totalUSD = (total * currentPrice) / 100000000;
-          document.getElementById("balance").innerHTML = `${total} satoshis | ${
-            totalUSD > 0.01 ? totalUSD.toFixed(2) : totalUSD.toFixed(4)
-          } USD`;
-          document.getElementById(
-            "currentBalance"
-          ).innerHTML = `${total} satoshis | ${
-            totalUSD > 0.01 ? totalUSD.toFixed(2) : totalUSD.toFixed(4)
-          } USD`;
-        });
-
-      document
-        .getElementById("storeKeysLocally")
-        .addEventListener("click", () => {
-          if (localStorage.getItem("keys")) {
-            if (!confirm("Keys already stored locally. Overwrite?")) {
-              document.getElementById("storeKeysLocally").disabled = true;
-              //change color of store keys locally
-              document.getElementById(
-                "storeKeysLocally"
-              ).style.backgroundColor = "#0056b3";
-              return;
-            }
-          }
-          localStorage.setItem("keys", JSON.stringify(keys));
-          console.log("Keys stored locally.");
-          document.getElementById("storeKeysLocally").disabled = true;
-          //change color of store keys locally
-          document.getElementById("storeKeysLocally").style.backgroundColor =
-            "#0056b3";
-          // write down mnemonic
-          alert(
-            `Keys succesfully stored on device, but it is important to write down mnemonic and store somewhere safe: ${keys.mnemonic} `
-          );
-          // scroll to top
-          document.getElementById("mainContainer").scrollIntoView();
-        });
-
-      document.getElementById("import").addEventListener("click", () => {
-        const mnemonic = document.getElementById("mnemonicImport").value;
-        if (!bsv.Mnemonic.isValid(mnemonic)) {
-          alert("Invalid mnemonic.");
-          return;
-        }
-        mnemonicString = mnemonic;
-        if (bipChoice == "32") {
-          const external = document.getElementById("path1a").value;
-          const path = document.getElementById("path2a").value;
-          keys = generateKeys32(external, path);
-          console.log(keys);
-          changePath = path;
-          receivingPath = external;
-        } else {
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          const path2 = document.getElementById("path2").value;
-          const path3 = document.getElementById("path3").value;
-          keys = generateKeys(coinPath, path1, path2, path3);
-          console.log(keys);
-          changePath = path3;
-          receivingPath = path2;
-        }
-
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-
-        // store keys locally click
-        document.getElementById("storeKeysLocally").click();
-        //clear mnemonic import input
-        document.getElementById("mnemonicImport").value = "";
-      });
-
-      if (localStorage.getItem("keys")) {
-        keys = JSON.parse(localStorage.getItem("keys"));
-        mnemonicString = keys.mnemonic;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        if (!keys.bip) {
-          keys.bip = "44";
-        }
-        if (!keys.path) {
-          keys.path = "m/44'/0'/0'/0/0";
-        }
-        path = keys.path;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        if (!keys.bip) {
-          keys.bip = "44";
-        }
-        if (keys.bip == "32") {
-          document.getElementById("bip32").checked = true;
-          document.getElementById("bip44").checked = false;
-          document.getElementById("changePath32").style.display = "block";
-          document.getElementById("changePath").style.display = "none";
-          document.getElementById("path1a").value = path
-            .split("/")[2]
-            .replace("'", "");
-          document.getElementById("path2a").value = path
-            .split("/")[3]
-            .replace("'", "");
-          path = keys.path;
-          changePath = parseInt(keys.path.split("/")[3]);
-          receivingPath = parseInt(keys.path.split("/")[2]);
-        } else {
-          document.getElementById("coinPath").value = path
-            .split("/")[2]
-            .replace("'", "");
-          document.getElementById("path1").value = path
-            .split("/")[3]
-            .replace("'", "");
-          document.getElementById("path2").value = path
-            .split("/")[4]
-            .replace("'", "");
-          document.getElementById("path3").value = path
-            .split("/")[5]
-            .replace("'", "");
-          path = keys.path;
-          changePath = parseInt(keys.path.split("/")[4]);
-          receivingPath = parseInt(keys.path.split("/")[3]);
-        }
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SatoFinder — BSV Wallet Tool</title>
+  <meta name="description" content="SatoFinder: client-side BSV wallet, key derivation, coin recovery, and send. Encrypted local storage. Single-file, auditable.">
+  <meta name="author" content="SmartLedger Technology">
+  <meta name="publisher" content="SmartLedger Technology">
+  <link rel="icon" href="logo2.png">
+  <link rel="manifest" href="manifest.json">
+
+  <!--
+    Content-Security-Policy. The inline script block delimited by the unique
+    BEGIN/END markers (see ./build.sh for the exact pattern) is hashed and
+    pinned below as sha256. Editing the script requires re-running build.sh,
+    otherwise the browser refuses to execute it. CDN bundles below are pinned
+    with sha384 SRI.
+  -->
+  <!--
+    NOTE: `frame-ancestors` is intentionally NOT in the meta CSP below — browsers
+    ignore it there. Set "X-Frame-Options: DENY" (or "Content-Security-Policy:
+    frame-ancestors 'none'") as an HTTP response header at deploy time
+    (Netlify _headers / nginx add_header / Caddy header).
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'sha256-/zGbwMURfAkbq9U30UWSULGdtI6CyNvj0gKeORTfW/c=' https://cdn.jsdelivr.net;
+    style-src 'unsafe-inline';
+    img-src 'self' data:;
+    connect-src https://api.whatsonchain.com https://api.bitails.io;
+    manifest-src 'self';
+    worker-src 'self';
+    base-uri 'none';
+    form-action 'none';
+    upgrade-insecure-requests;
+  ">
+
+  <!-- @smartledger/bsv@3.4.3 — pinned by SHA-384. Any upgrade requires a
+       deliberate hash bump (see build.sh --no-network for verification). -->
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv.min.js"
+          integrity="sha384-fK4kLzP+qryi0rDQXggLpdNyDV+Ah7ir42H+VzIbHU1x5qjkeCTNBWBhK3rulf6V"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-mnemonic.min.js"
+          integrity="sha384-GQMXpY1DeHWMInXP4NyXAgErHJu0sOXpjr8QuzHCpPKp2aAi8Drk/VflXBhey4s3"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-message.min.js"
+          integrity="sha384-0Acsl74Yh+7IB+WItm8erLKmjWVzKLNgHqIxNZuO9KX/0DKhf162MbRKFoKSvrW5"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-ecies.min.js"
+          integrity="sha384-sPMPdSONnMFZjjhH32M/304wND8yEUI6ABWr6Unwf7wMEqFDisC1icQIaX4+HVHa"
+          crossorigin="anonymous"></script>
+
+  <!-- ====================== 01. STYLE ====================== -->
+  <style>
+    :root{
+      --bg:#0b0b0c; --panel:#141416; --border:#26262a; --muted:#9aa0a6;
+      --fg:#e6e6e6; --accent:#7cd992; --warn:#f5c66b; --err:#ff6b6b; --link:#7cb6ff;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+      font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+    a{color:var(--link)}
+    main{max-width:720px;margin:0 auto;padding:24px 16px 96px}
+    header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+    header h1{font-size:20px;margin:0;color:var(--accent);letter-spacing:.5px}
+    header .sub{color:var(--muted);font-size:12px}
+    .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;
+      padding:16px;margin:12px 0}
+    .panel h2{font-size:14px;margin:0 0 12px;color:var(--accent);text-transform:uppercase;letter-spacing:1px}
+    button{background:transparent;color:var(--fg);border:1px solid var(--border);
+      padding:8px 14px;border-radius:6px;font:inherit;cursor:pointer}
+    button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    button.primary{background:var(--accent);color:#0b0b0c;border-color:var(--accent);font-weight:700}
+    button.primary:hover{background:#a3e8b3;border-color:#a3e8b3;color:#0b0b0c}
+    button.danger{border-color:var(--err);color:var(--err)}
+    input,textarea{background:#0e0e10;border:1px solid var(--border);color:var(--fg);
+      padding:8px;border-radius:6px;font:inherit;width:100%}
+    input:focus,textarea:focus{outline:none;border-color:var(--accent)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .row > *{flex:1}
+    code,pre{font:inherit;background:#0e0e10;padding:2px 6px;border-radius:4px;word-break:break-all}
+    pre{padding:12px;white-space:pre-wrap}
+    .muted{color:var(--muted)}
+    .warn{color:var(--warn)}
+    .err{color:var(--err)}
+    #statusBar{position:fixed;left:0;right:0;bottom:0;background:#000;border-top:1px solid var(--border);
+      padding:10px 16px;font-size:13px;display:none}
+    #statusBar.show{display:block}
+    #statusBar.error{color:var(--err);border-top-color:var(--err)}
+    #statusBar.info{color:var(--accent)}
+    footer{margin-top:32px;text-align:center;color:var(--muted);font-size:12px}
+  </style>
+</head>
+<body>
+  <!-- ====================== 02. BODY ====================== -->
+  <main>
+    <header>
+      <h1>SatoFinder</h1>
+      <span class="sub">v2 · single-file · audit your wallet</span>
+    </header>
+    <div id="app" role="main" aria-live="polite"></div>
+    <footer>
+      <span>&copy;
+        <a href="https://smartledger.technology" target="_blank" rel="noopener noreferrer">SmartLedger Technology</a> ·
+        <a href="help.html">help</a> ·
+        <a href="https://github.com/codenlighten/satofinder" target="_blank" rel="noopener noreferrer">source</a>
+      </span>
+    </footer>
+  </main>
+  <div id="statusBar" role="status" aria-live="assertive"></div>
+
+  <script>
+/*<<SATOFINDER-SCRIPT-BEGIN>>*/
+'use strict';
+
+// ====================== 03. CONSTANTS ======================
+const VERSION = '2.0.0';
+
+const ENDPOINTS = Object.freeze({
+  woc: {
+    balance:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/balance`,
+    unspent:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/unspent`,
+    history:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/history`,
+    txInfo:   (h) => `https://api.whatsonchain.com/v1/bsv/main/tx/hash/${encodeURIComponent(h)}`,
+    broadcast: 'https://api.whatsonchain.com/v1/bsv/main/tx/raw',
+    price:     'https://api.whatsonchain.com/v1/bsv/main/exchangerate',
+  },
+  bitails: {
+    unspentMulti: 'https://api.bitails.io/address/unspent/multi',
+    historyMulti: 'https://api.bitails.io/address/history/multi',
+  },
+});
+
+// BIP path presets, mapped from the legacy walletType dropdown.
+const PRESETS = Object.freeze({
+  'default':     { bip: 44, coin: 0,   account: 0, label: 'Default BIP44 (m/44\'/0\'/0\'/0/i)' },
+  'bip32basic':  { bip: 32, label: 'BIP32 basic (m/0\'/0\'/i)' },
+  'atomic':      { bip: 44, coin: 145, account: 0, label: 'Atomic Wallet' },
+  'exodus':      { bip: 44, coin: 236, account: 0, label: 'Exodus' },
+  'keevo':       { bip: 44, coin: 236, account: 0, label: 'Keevo' },
+  'moneybutton': { bip: 44, coin: 0,   account: 0, label: 'MoneyButton' },
+  'relayx':      { bip: 44, coin: 236, account: 0, label: 'RelayX' },
+  'simplycash':  { bip: 44, coin: 145, account: 0, label: 'SimplyCash' },
+  'twetch':      { bip: 44, coin: 0,   account: 0, label: 'Twetch' },
+});
+
+const FEE_PER_KB = 50;          // sat/KB, conservative
+const PBKDF2_ITER = 310000;     // OWASP 2023 minimum for PBKDF2-SHA256
+const AUTOLOCK_MS = 10 * 60 * 1000;
+const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
+const BITAILS_BATCH = 20;       // per-request address count
+const VAULT_KEY = 'satofinder.vault.v1';
+const PREFS_KEY = 'satofinder.prefs.v1';
+const TIPPING_ADDRESS = '139Gv2y2JcjCNdnJNS3kWGm36mjjespfQc';
+
+// ====================== 04. CRYPTO ======================
+// WebCrypto-only vault: PBKDF2-SHA256(password, salt) -> AES-GCM key, encrypt
+// JSON blob (mnemonic + createdAt). Nothing else is persisted. Derivation prefs
+// live in a separate non-encrypted PREFS_KEY because they're not sensitive.
+const Crypto = {
+  randomBytes(n) { return crypto.getRandomValues(new Uint8Array(n)); },
+
+  async deriveKey(password, salt, iter = PBKDF2_ITER) {
+    const base = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt','decrypt']);
+  },
+
+  b64enc(buf) {
+    const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    return btoa(s);
+  },
+  b64dec(s) {
+    const bin = atob(s); const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
+  },
+
+  async encrypt(password, plaintextStr) {
+    const salt = Crypto.randomBytes(16);
+    const iv   = Crypto.randomBytes(12);
+    const key  = await Crypto.deriveKey(password, salt);
+    const ct   = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintextStr));
+    return {
+      v: 1, kdf: 'PBKDF2-SHA256', iter: PBKDF2_ITER,
+      salt: Crypto.b64enc(salt),
+      iv:   Crypto.b64enc(iv),
+      ct:   Crypto.b64enc(ct),
+    };
+  },
+
+  async decrypt(password, blob) {
+    if (!blob || blob.v !== 1) throw new Error('Unsupported vault format');
+    const salt = Crypto.b64dec(blob.salt);
+    const iv   = Crypto.b64dec(blob.iv);
+    const ct   = Crypto.b64dec(blob.ct);
+    const key  = await Crypto.deriveKey(password, salt, blob.iter || PBKDF2_ITER);
+    let plain;
+    try {
+      plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    } catch {
+      throw new Error('Wrong password');
+    }
+    return new TextDecoder().decode(plain);
+  },
+};
+
+// Vault persistence — single localStorage key, no plaintext anywhere.
+const Vault = {
+  exists() {
+    try { return localStorage.getItem(VAULT_KEY) !== null; } catch { return false; }
+  },
+  read() {
+    try { return JSON.parse(localStorage.getItem(VAULT_KEY)); } catch { return null; }
+  },
+  async save(mnemonic, password) {
+    const payload = JSON.stringify({ mnemonic, createdAt: Date.now() });
+    const blob = await Crypto.encrypt(password, payload);
+    localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
+  },
+  async unlock(password) {
+    const blob = Vault.read();
+    if (!blob) throw new Error('No vault on this device');
+    const json = await Crypto.decrypt(password, blob);
+    const obj = JSON.parse(json);
+    if (!obj.mnemonic || typeof obj.mnemonic !== 'string') throw new Error('Vault payload corrupt');
+    return obj.mnemonic;
+  },
+  wipe() {
+    localStorage.removeItem(VAULT_KEY);
+    localStorage.removeItem(PREFS_KEY);
+  },
+};
+
+// Cheap password-strength heuristic — no external lib. Returns 0..4 (zxcvbn-ish).
+function passwordStrength(p) {
+  if (!p) return 0;
+  let s = 0;
+  if (p.length >= 12) s++;
+  if (p.length >= 16) s++;
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(r => r.test(p)).length;
+  if (classes >= 3) s++;
+  if (classes >= 4 && p.length >= 14) s++;
+  return Math.min(4, s);
+}
+const STRENGTH_LABEL = ['too weak', 'weak', 'fair', 'good', 'strong'];
+
+// ====================== 05. STATE ======================
+// Single mutable object + setState + subscribers. View machine fields
+// (view, step, draft) hold UI-flow state so render fns stay pure.
+const state = {
+  // session
+  locked: true,
+  vaultExists: false,
+  wallet: null,                            // { mnemonic, root: HDPrivateKey } — RAM only
+
+  // view machine — drives renderApp dispatch:
+  //   'landing' | 'create' | 'import' | 'unlock' | 'unlocked'
+  view: 'landing',
+  step: null,                              // sub-step inside a multi-screen flow
+  draft: {},                               // transient inputs (mnemonic-in-progress, etc.)
+
+  // derivation prefs (loaded from PREFS_KEY when present)
+  bip: 44, coin: 0, account: 0, change: 0, addrIndex: 0,
+  preset: 'default',
+  derived: null,                           // { path, wif, pub, address }
+
+  // network-derived
+  price: null,                             // BSV/USD
+  balance: null,                           // { confirmed, unconfirmed }
+  history: [],
+  recovery: null,
+
+  // ui prefs
+  hideKeys: true,
+
+  // send flow — set by Actions.buildSend, cleared by cancel/broadcast
+  draftTx: null,                           // { tx, hex, txid, to, sentSats, changeSats, fee, vsize }
+
+  // ephemeral
+  status: { kind: 'idle', msg: '' },
+  busy: false,                             // disables interactive controls during async ops
+};
+
+const subscribers = new Set();
+function subscribe(fn) { subscribers.add(fn); return () => subscribers.delete(fn); }
+function setState(patch) {
+  Object.assign(state, patch);
+  for (const fn of subscribers) {
+    try { fn(state); } catch (e) { console.error('subscriber error', e); }
+  }
+}
+
+// ====================== 06. DERIVATION ======================
+// Pure functions over a wallet root (bsv.HDPrivateKey). Builds BIP32 / BIP44
+// paths from prefs, derives a child HDPrivateKey, and returns the address-set
+// the keys panel renders. No DOM, no state — call from Actions and pass result.
+const Derive = {
+  pathFor(p) {
+    if (p.bip === 32) return `m/0'/${p.change}'/${p.addrIndex}'`;
+    return `m/44'/${p.coin}'/${p.account}'/${p.change}/${p.addrIndex}`;
+  },
+  derive(root, p) {
+    const path = Derive.pathFor(p);
+    const child = root.deriveChild(path);
+    const priv  = child.privateKey;
+    const pub   = bsv.PublicKey.fromPrivateKey(priv);
+    const address = bsv.Address.fromPublicKey(pub).toString();
+    return { path, wif: priv.toString(), pub: pub.toString(), address };
+  },
+};
+
+// Transaction builder. Uses the two-pass fee pattern to avoid the legacy bug
+// where _estimateFee() was called BEFORE outputs were added (index.html:1647
+// in the old code) — the fee was systematically wrong. Here we build once at
+// full amount, measure the real signed size, recompute the fee, then build
+// again with the corrected output. Works for both single-recipient send and
+// multi-UTXO recovery sweeps.
+const TxBuilder = {
+  // Build a single-recipient tx. `utxos` is an array shaped like WoC's
+  // /address/unspent normalized to { txid, vout, satoshis, scriptHex }.
+  // Returns { tx, hex, txid, fee, sentSats, changeSats }.
+  // If `sentSats === 'max'`, sweeps the full input minus fee to `toAddress`
+  // with no change output. Otherwise creates a change output back to fromAddress.
+  send({ utxos, toAddress, sats, privateKey, fromAddress, feePerKb = FEE_PER_KB }) {
+    if (!utxos || utxos.length === 0) throw new Error('No UTXOs to spend');
+    if (!toAddress) throw new Error('No recipient address');
+    const totalIn = utxos.reduce((a, u) => a + u.satoshis, 0);
+    const isMax = sats === 'max';
+    if (!isMax) {
+      if (!Number.isInteger(sats) || sats <= 0) throw new Error('Amount must be a positive integer in sats');
+      if (sats > totalIn) throw new Error('Amount exceeds spendable balance');
+    }
+
+    const inputs = utxos.map(u => ({
+      txId: u.txid, outputIndex: u.vout,
+      address: u.address || fromAddress,
+      script: u.scriptHex || bsv.Script.buildPublicKeyHashOut(u.address || fromAddress).toHex(),
+      satoshis: u.satoshis,
+    }));
+
+    // Pass 1: build with the chosen amount (or full input for max), sign, measure.
+    const firstTo = isMax ? totalIn : sats;
+    let t1 = new bsv.Transaction().from(inputs).feePerKb(feePerKb).to(toAddress, firstTo);
+    if (!isMax) t1 = t1.change(fromAddress);
+    t1.sign(privateKey);
+    const vsize = t1.toBuffer().length;
+    // 1 sat/byte safety pad on top of the standard rate to cover tiny ECDSA
+    // signature length variations after the second-pass re-sign.
+    const fee = Math.ceil((vsize * feePerKb) / 1000) + Math.ceil(vsize / 1000) + 10;
+
+    // Pass 2: rebuild with the corrected amount.
+    let sentSats, changeSats;
+    let t2 = new bsv.Transaction().from(inputs).feePerKb(feePerKb);
+    if (isMax) {
+      sentSats = totalIn - fee;
+      if (sentSats <= 546) throw new Error('Dust after fee — input too small to spend');
+      t2 = t2.to(toAddress, sentSats);
+      changeSats = 0;
+    } else {
+      sentSats = sats;
+      changeSats = totalIn - sats - fee;
+      if (changeSats < 0) throw new Error('Insufficient funds for amount + fee');
+      t2 = t2.to(toAddress, sats);
+      // Skip dust change outputs — fold into fee instead.
+      if (changeSats > 546) t2 = t2.to(fromAddress, changeSats);
+      else { changeSats = 0; }
+    }
+    t2.sign(privateKey);
+
+    const hex = t2.toString();
+    return { tx: t2, hex, txid: t2.hash, fee, sentSats, changeSats, vsize };
+  },
+};
+
+// Non-sensitive prefs persistence. Keeps the user on their preferred derivation
+// (preset, coin path, account, change, index, hideKeys toggle) across reloads.
+// Mnemonic is NEVER stored here.
+const Prefs = {
+  load() {
+    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
+    catch { return {}; }
+  },
+  save(p) {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        bip: p.bip, coin: p.coin, account: p.account,
+        change: p.change, addrIndex: p.addrIndex,
+        preset: p.preset, hideKeys: p.hideKeys,
+      }));
+    } catch {}
+  },
+};
+
+// ====================== 07. NETWORK ======================
+// All HTTP goes through api(): aborts after 15s, throws on non-2xx with the
+// server's response body trimmed to 200 chars, parses JSON when possible
+// (broadcast returns the txid as plain text, so we fall back to the raw body).
+async function api(url, opts = {}) {
+  const ctl = new AbortController();
+  const timeout = opts.timeout ?? 15000;
+  const t = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const r = await fetch(url, { ...opts, signal: ctl.signal });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}: ${text.slice(0, 200)}`);
+    try { return JSON.parse(text); } catch { return text; }
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Thin helpers per provider. Keep response shapes normalized at this layer so
+// callers don't need to know which provider answered.
+const Net = {
+  woc: {
+    balance:    (a) => api(ENDPOINTS.woc.balance(a)),
+    unspent:    (a) => api(ENDPOINTS.woc.unspent(a)),
+    history:    (a) => api(ENDPOINTS.woc.history(a)),
+    txInfo:     (h) => api(ENDPOINTS.woc.txInfo(h)),
+    price:      ()  => api(ENDPOINTS.woc.price),
+    broadcast:  (txHex) => api(ENDPOINTS.woc.broadcast, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ txhex: txHex }),
+                }),
+  },
+  bitails: {
+    unspentMulti: (addrs) => api(ENDPOINTS.bitails.unspentMulti, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ addresses: addrs }),
+                  }),
+    historyMulti: (addrs) => api(ENDPOINTS.bitails.historyMulti, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ addresses: addrs }),
+                  }),
+  },
+};
+
+// Recovery: scan the first RECOVERY_DEPTH addresses on both receive (change=0)
+// and change (change=1) branches under the current preset, fetch UTXOs in
+// batches via bitails (the only provider with a multi-address endpoint), and
+// fold the results into per-address records with derivation info attached so
+// the user can sweep each one.
+const Recovery = {
+  // Returns [{ path, address, wif, utxos: [normalized], totalSats }]
+  // for every scanned address that has at least one UTXO.
+  async scan(root, prefs, opts = {}) {
+    const depth = opts.depth || RECOVERY_DEPTH;
+    const onProgress = opts.onProgress || (() => {});
+    // 1. Derive depth*2 candidate addresses (both branches).
+    const candidates = [];
+    for (let i = 0; i < depth; i++) {
+      for (const change of [0, 1]) {
+        const p = { ...prefs, change, addrIndex: i };
+        const d = Derive.derive(root, p);
+        candidates.push(d);
+      }
+    }
+    onProgress({ stage: 'derived', total: candidates.length });
+
+    // 2. Query bitails multi-unspent in batches of BITAILS_BATCH.
+    const found = [];
+    for (let off = 0; off < candidates.length; off += BITAILS_BATCH) {
+      const batch = candidates.slice(off, off + BITAILS_BATCH);
+      const addrs = batch.map(c => c.address);
+      onProgress({ stage: 'scanning', done: off, total: candidates.length });
+      let resp;
+      try {
+        resp = await Net.bitails.unspentMulti(addrs);
+      } catch (e) {
+        throw new Error(`bitails scan failed at offset ${off}: ${e.message}`);
+      }
+      if (!Array.isArray(resp)) throw new Error('Unexpected bitails response shape');
+      // Bitails returns per-address records; join back with derivation info.
+      const byAddr = Object.create(null);
+      for (const rec of resp) byAddr[rec.address] = rec;
+      for (const c of batch) {
+        const rec = byAddr[c.address];
+        if (!rec || !Array.isArray(rec.unspent) || rec.unspent.length === 0) continue;
+        const utxos = rec.unspent.map(u => ({
+          txid: u.txid, vout: u.vout, satoshis: u.satoshis,
+          address: c.address,
+          scriptHex: bsv.Script.buildPublicKeyHashOut(c.address).toHex(),
+        }));
+        const totalSats = utxos.reduce((a, x) => a + x.satoshis, 0);
+        found.push({ path: c.path, address: c.address, wif: c.wif, utxos, totalSats });
+      }
+    }
+    onProgress({ stage: 'done', total: candidates.length, found: found.length });
+    return found;
+  },
+};
+
+// Normalize WoC's unspent shape into what TxBuilder expects. Keeps the
+// builder provider-agnostic.
+function normalizeWocUtxos(raw, address) {
+  if (!Array.isArray(raw)) throw new Error('Unexpected unspent response');
+  return raw.map(u => ({
+    txid: u.tx_hash, vout: u.tx_pos, satoshis: u.value, address,
+    scriptHex: bsv.Script.buildPublicKeyHashOut(address).toHex(),
+  }));
+}
+
+// Address validity (network-aware via SDK). Returns true/false.
+function isValidAddress(addr) {
+  try { return !!bsv.Address.fromString(addr); } catch { return false; }
+}
+
+// Format helpers (pure, no DOM).
+const Fmt = {
+  sats: (n) => (n == null ? '' : new Intl.NumberFormat('en-US').format(n)),
+  bsv:  (n) => (n == null ? '' : (n / 1e8).toFixed(8) + ' BSV'),
+  usd:  (sats, rate) => {
+    if (sats == null || rate == null) return '';
+    const u = (sats * rate) / 1e8;
+    return '$' + (u >= 0.01 ? u.toFixed(2) : u.toFixed(6));
+  },
+  shortHash: (h) => (h && h.length > 16 ? h.slice(0, 8) + '…' + h.slice(-8) : (h || '')),
+  time: (unix) => {
+    if (!unix) return '';
+    try { return new Date(unix * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'; }
+    catch { return ''; }
+  },
+};
+
+// ====================== 08. DOM ======================
+function $(id) { return document.getElementById(id); }
+function safeUrl(u) {
+  const s = String(u);
+  return /^(https?:|mailto:|#|\/)/.test(s) ? s : '#';
+}
+function el(tag, attrs = {}, children = []) {
+  const n = document.createElement(tag);
+  for (const k of Object.keys(attrs || {})) {
+    const v = attrs[k];
+    if (v == null || v === false) continue;
+    if (k === 'class')       n.className = v;
+    else if (k === 'dataset') Object.assign(n.dataset, v);
+    else if (k === 'style')   n.setAttribute('style', String(v));
+    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else if (k === 'href' || k === 'src') n.setAttribute(k, safeUrl(v));
+    else n.setAttribute(k, String(v));
+  }
+  const kids = Array.isArray(children) ? children : [children];
+  for (const c of kids) {
+    if (c == null || c === false) continue;
+    n.appendChild(typeof c === 'string' || typeof c === 'number'
+      ? document.createTextNode(String(c)) : c);
+  }
+  return n;
+}
+
+// Per-panel renderers. Each owns one DOM region and is pure (state) => void.
+// renderApp is a view dispatcher; the real per-section panels (keys, balance,
+// send, history, recovery) arrive in later phases.
+function renderApp(s) {
+  const root = $('app');
+  while (root.firstChild) root.removeChild(root.firstChild);
+  let view;
+  switch (s.view) {
+    case 'landing':  view = renderLanding(s); break;
+    case 'create':   view = renderCreate(s);  break;
+    case 'import':   view = renderImport(s);  break;
+    case 'unlock':   view = renderUnlock(s);  break;
+    case 'unlocked': view = renderUnlockedPlaceholder(s); break;
+    default:         view = renderLanding(s);
+  }
+  root.appendChild(view);
+}
+
+function renderLanding(s) {
+  const haveVault = s.vaultExists;
+  return el('div', {}, [
+    el('div', { class: 'panel' }, [
+      el('h2', {}, haveVault ? 'Locked' : 'Welcome'),
+      el('p', { class: 'muted' }, haveVault
+        ? 'A vault exists on this device. Unlock with your password, or create / import a new wallet (this will REPLACE the existing vault).'
+        : 'No vault on this device. Create a new wallet or import an existing 12/24-word mnemonic. Your seed is encrypted with a password you choose — never sent to any server.'),
+    ]),
+    haveVault ? el('div', { class: 'panel' }, [
+      el('h2', {}, 'Unlock existing'),
+      el('button', { class: 'primary', onclick: () => Actions.gotoUnlock() }, 'Unlock'),
+    ]) : null,
+    el('div', { class: 'panel' }, [
+      el('h2', {}, 'Create new wallet'),
+      el('p', { class: 'muted' }, 'Generates a fresh BIP39 mnemonic in your browser. Choose entropy:'),
+      el('div', { class: 'row' }, [
+        el('button', { onclick: () => Actions.startCreate(128) }, '12 words (128-bit)'),
+        el('button', { onclick: () => Actions.startCreate(256) }, '24 words (256-bit)'),
+      ]),
+    ]),
+    el('div', { class: 'panel' }, [
+      el('h2', {}, 'Import existing mnemonic'),
+      el('button', { onclick: () => Actions.startImport() }, 'Import 12/24-word phrase'),
+    ]),
+    haveVault ? el('div', { class: 'panel' }, [
+      el('h2', {}, 'Danger zone'),
+      el('p', { class: 'muted' }, 'If you have forgotten your password, you must wipe the local vault and re-import the mnemonic. There is no password recovery — the encrypted blob is the only source of truth.'),
+      el('button', { class: 'danger', onclick: () => Actions.confirmWipe() }, 'Wipe vault and start over'),
+    ]) : null,
+  ]);
+}
+
+function renderCreate(s) {
+  if (s.step === 'show') return renderCreateShow(s);
+  if (s.step === 'confirm') return renderCreateConfirm(s);
+  if (s.step === 'password') return renderSetPassword(s, 'create');
+  return renderLanding(s);
+}
+function renderImport(s) {
+  if (s.step === 'enter') return renderImportEnter(s);
+  if (s.step === 'password') return renderSetPassword(s, 'import');
+  return renderLanding(s);
+}
+function renderUnlock(s) {
+  const passId = 'pw-unlock';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Unlock'),
+    el('p', { class: 'muted' }, 'Enter the password you set when you created or imported this wallet.'),
+    el('input', {
+      id: passId, type: 'password', placeholder: 'Password',
+      autocomplete: 'current-password',
+      onkeydown: (e) => { if (e.key === 'Enter') Actions.unlock($(passId).value); },
+    }),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.gotoLanding() }, 'Back'),
+      el('button', { class: 'primary', disabled: s.busy,
+                     onclick: () => Actions.unlock($(passId).value) },
+        s.busy ? 'Unlocking…' : 'Unlock'),
+    ]),
+  ]);
+}
+function renderUnlockedPlaceholder(s) {
+  // Composes the unlocked view from independent panels. Each panel is a
+  // pure function (state) => Node; renderApp dispatches the whole tree.
+  return el('div', {}, [
+    renderHeaderActions(s),
+    renderPresetPanel(s),
+    renderPathPanel(s),
+    renderKeysPanel(s),
+    renderBalancePanel(s),
+    renderSendPanel(s),
+    renderRecoveryPanel(s),
+    renderHistoryPanel(s),
+    renderTipPanel(s),
+    renderExportPanel(s),
+  ]);
+}
+
+function renderHeaderActions(s) {
+  return el('div', { class: 'panel' }, [
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.toggleHideKeys() },
+        s.hideKeys ? 'Show private keys' : 'Hide private keys'),
+      el('button', { onclick: () => Actions.lock() }, 'Lock'),
+    ]),
+  ]);
+}
+
+function renderPresetPanel(s) {
+  const id = 'preset-select';
+  const opts = Object.keys(PRESETS).map(k =>
+    el('option', { value: k, selected: s.preset === k ? 'selected' : null }, PRESETS[k].label));
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Wallet preset'),
+    el('p', { class: 'muted' }, 'Pick the wallet whose derivation you want to scan; sets coin / account defaults.'),
+    el('select', {
+      id, style: 'width:100%;padding:8px;background:#0e0e10;color:var(--fg);border:1px solid var(--border);border-radius:6px',
+      onchange: () => Actions.setPreset($(id).value),
+    }, opts),
+  ]);
+}
+
+function renderPathPanel(s) {
+  // Build per-field inputs. BIP32 has two editable hardened indices; BIP44 has
+  // four indices (coin, account, change, addr). All trigger Actions.setPathField
+  // on change, which re-derives and persists prefs.
+  const isBip44 = s.bip === 44;
+  const fields = isBip44
+    ? [
+        ['coin',      "coin'",     s.coin],
+        ['account',   "account'",  s.account],
+        ['change',    'change',    s.change],
+        ['addrIndex', 'index',     s.addrIndex],
+      ]
+    : [
+        ['change',    "external'", s.change],
+        ['addrIndex', "index'",    s.addrIndex],
+      ];
+  const inputs = fields.map(([f, label, val]) => {
+    const fid = 'path-' + f;
+    return el('div', { style: 'flex:1;min-width:90px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, label),
+      el('input', {
+        id: fid, type: 'number', min: 0, value: String(val),
+        onchange: () => Actions.setPathField(f, $(fid).value),
+      }),
+    ]);
+  });
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Derivation path'),
+    el('div', { class: 'row', style: 'margin-bottom:8px' }, [
+      el('button', { class: isBip44 ? 'primary' : '', onclick: () => Actions.setBip(44) }, 'BIP44'),
+      el('button', { class: !isBip44 ? 'primary' : '', onclick: () => Actions.setBip(32) }, 'BIP32'),
+    ]),
+    el('div', { class: 'muted', style: 'margin-bottom:8px' }, [
+      'Path: ',
+      el('code', {}, Derive.pathFor(s)),
+    ]),
+    el('div', { class: 'row' }, inputs),
+  ]);
+}
+
+function renderKeysPanel(s) {
+  const d = s.derived;
+  if (!d) {
+    return el('div', { class: 'panel' }, [
+      el('h2', {}, 'Keys'),
+      el('p', { class: 'muted' }, 'No derivation yet.'),
+    ]);
+  }
+  const rows = [];
+  rows.push(makeKeyRow('Address', d.address, () => Actions.copy(d.address, 'Address')));
+  rows.push(makeKeyRow('Public key', d.pub, () => Actions.copy(d.pub, 'Public key')));
+  if (!s.hideKeys) {
+    rows.push(makeKeyRow('Private key (WIF)', d.wif, () => Actions.copy(d.wif, 'WIF'),
+      'Anyone with this string can spend coins at this address.'));
+    rows.push(makeKeyRow('Mnemonic', s.wallet && s.wallet.mnemonic,
+      () => Actions.copy(s.wallet.mnemonic, 'Mnemonic'),
+      'Your recovery phrase. Treat like cash.'));
+  } else {
+    rows.push(el('div', { class: 'muted', style: 'margin-top:8px' },
+      'Private key and mnemonic hidden. Click "Show private keys" above to reveal.'));
+  }
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Keys'),
+    ...rows,
+  ]);
+}
+
+function makeKeyRow(label, value, onCopy, warning) {
+  return el('div', { style: 'margin-bottom:12px' }, [
+    el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, label),
+    el('div', { class: 'row', style: 'align-items:flex-start;gap:8px' }, [
+      el('code', { style: 'flex:1' }, value || ''),
+      el('button', { onclick: onCopy, style: 'flex:0 0 auto' }, 'Copy'),
+    ]),
+    warning ? el('div', { class: 'warn', style: 'font-size:11px;margin-top:4px' }, warning) : null,
+  ]);
+}
+
+function renderBalancePanel(s) {
+  const d = s.derived;
+  const b = s.balance;
+  const totalSats = b ? (b.confirmed + b.unconfirmed) : null;
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Balance'),
+    !d ? el('p', { class: 'muted' }, 'No address derived.')
+       : el('div', {}, [
+        el('p', { class: 'muted', style: 'font-size:11px' }, 'For address:'),
+        el('code', { style: 'display:block;margin-bottom:8px' }, d.address),
+        b ? el('div', {}, [
+          el('p', {}, [
+            el('strong', {}, Fmt.sats(totalSats)), ' sats  ',
+            el('span', { class: 'muted' }, '(' + Fmt.bsv(totalSats) + ')'),
+          ]),
+          el('p', { class: 'muted' }, [
+            s.price != null
+              ? `${Fmt.usd(totalSats, s.price)} at $${s.price.toFixed(2)} / BSV`
+              : 'USD price not loaded',
+          ]),
+          b.unconfirmed
+            ? el('p', { class: 'warn' }, `Includes ${Fmt.sats(b.unconfirmed)} unconfirmed sats.`)
+            : null,
+        ]) : el('p', { class: 'muted' }, 'No balance fetched yet.'),
+        el('div', { class: 'row' }, [
+          el('button', { disabled: s.busy, onclick: () => Actions.refreshBalance() },
+            s.busy ? 'Refreshing…' : (b ? 'Refresh' : 'Fetch balance')),
+        ]),
+      ]),
+  ]);
+}
+
+function renderSendPanel(s) {
+  const d = s.derived;
+  const draft = s.draftTx;
+  if (!d) {
+    return el('div', { class: 'panel' }, [
+      el('h2', {}, 'Send BSV'),
+      el('p', { class: 'muted' }, 'No address derived.'),
+    ]);
+  }
+  if (draft) return renderSendConfirm(s, draft);
+  const toId = 'send-to', amtId = 'send-amt';
+  const setMax = () => {
+    if (!s.balance) { Status.error('Refresh balance first.'); return; }
+    // Use a generous fee-pad guess (~250 sat at 50 sat/KB) and let the builder
+    // recompute. Worst case the user clicks "max" and gets a slightly small
+    // amount back; nothing breaks.
+    const total = s.balance.confirmed + s.balance.unconfirmed;
+    $(amtId).value = String(Math.max(0, total - 300));
+  };
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Send BSV'),
+    el('p', { class: 'muted', style: 'font-size:11px' }, 'From: ' + d.address),
+    el('div', { style: 'margin-bottom:8px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, 'Recipient address'),
+      el('input', { id: toId, type: 'text', placeholder: '1...', autocomplete: 'off',
+                    spellcheck: 'false' }),
+    ]),
+    el('div', { style: 'margin-bottom:8px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, 'Amount (satoshis, whole numbers)'),
+      el('div', { class: 'row' }, [
+        el('input', { id: amtId, type: 'number', min: '1', step: '1', placeholder: '0' }),
+        el('button', { onclick: setMax, style: 'flex:0 0 auto' }, 'Max'),
+      ]),
+    ]),
+    el('div', { class: 'row' }, [
+      el('button', { class: 'primary', disabled: s.busy,
+                     onclick: () => Actions.buildSend($(toId).value, $(amtId).value) },
+        s.busy ? 'Building…' : 'Build transaction'),
+    ]),
+  ]);
+}
+
+function renderSendConfirm(s, draft) {
+  const totalIn = draft.sentSats + draft.changeSats + draft.fee;
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Confirm transaction'),
+    el('p', { class: 'warn' }, 'Review carefully. Once broadcast, this cannot be reversed.'),
+    el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px' }, 'Sending'),
+      el('div', {}, [
+        el('strong', {}, Fmt.sats(draft.sentSats)), ' sats',
+        s.price != null ? el('span', { class: 'muted' }, '  (' + Fmt.usd(draft.sentSats, s.price) + ')') : null,
+      ]),
+    ]),
+    el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px' }, 'To'),
+      el('code', { style: 'display:block;word-break:break-all' }, draft.to),
+    ]),
+    el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px' }, 'Miner fee'),
+      el('div', {}, [Fmt.sats(draft.fee) + ' sats (' + draft.vsize + ' bytes, ' + FEE_PER_KB + ' sat/KB)']),
+    ]),
+    draft.changeSats > 0 ? el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px' }, 'Change back to you'),
+      el('div', {}, [Fmt.sats(draft.changeSats) + ' sats']),
+    ]) : null,
+    el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px' }, 'Total input spent'),
+      el('div', {}, [Fmt.sats(totalIn) + ' sats']),
+    ]),
+    el('details', { style: 'margin-bottom:12px' }, [
+      el('summary', { class: 'muted', style: 'cursor:pointer' }, 'Show raw transaction hex'),
+      el('pre', { style: 'font-size:11px;margin-top:8px' }, draft.hex),
+    ]),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.cancelSend() }, 'Cancel'),
+      el('button', { class: 'primary danger', disabled: s.busy,
+                     onclick: () => Actions.broadcastSend() },
+        s.busy ? 'Broadcasting…' : 'Confirm & broadcast'),
+    ]),
+  ]);
+}
+
+function renderRecoveryPanel(s) {
+  const rec = s.recovery;
+  const d = s.derived;
+  const swept = (s.draft && s.draft.swept) || {};
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Recovery sweep'),
+    el('p', { class: 'muted' }, `Scans the first ${RECOVERY_DEPTH} receive + ${RECOVERY_DEPTH} change addresses under the current preset for stray UTXOs. Each found address can be swept to your current receive address.`),
+    el('div', { class: 'row', style: 'margin-bottom:8px' }, [
+      el('button', { disabled: s.busy, onclick: () => Actions.scanRecovery() },
+        s.busy && rec && rec.scanning ? `Scanning… ${rec.done || 0}/${rec.total || ''}`
+                                       : (rec ? 'Re-scan' : `Scan first ${RECOVERY_DEPTH} addresses`)),
+    ]),
+    !rec ? null
+         : !rec.found || rec.found.length === 0
+           ? el('p', { class: 'muted' }, rec.scanning ? 'Scanning…' : 'No UTXOs found in scanned range.')
+           : el('div', {}, [
+              el('p', {}, [
+                'Found ', el('strong', {}, String(rec.found.length)),
+                ' address(es) with ', el('strong', {}, Fmt.sats(rec.totalSats)),
+                ' sats recoverable.',
+              ]),
+              ...rec.found.map((item) => renderRecoveryRow(s, item, d ? d.address : null, swept[item.path])),
+            ]),
+  ]);
+}
+function renderRecoveryRow(s, item, destAddr, sweepResult) {
+  return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' }, [
+    el('div', { class: 'muted', style: 'font-size:11px' }, item.path),
+    el('code', { style: 'display:block;margin:4px 0' }, item.address),
+    el('div', { class: 'row', style: 'align-items:center' }, [
+      el('div', {}, [
+        el('strong', {}, Fmt.sats(item.totalSats)), ' sats',
+        ' · ', String(item.utxos.length), ' utxo' + (item.utxos.length === 1 ? '' : 's'),
+      ]),
+      sweepResult
+        ? el('span', { class: sweepResult.ok ? 'muted' : 'err', style: 'flex:0 0 auto' },
+            sweepResult.ok ? `swept: ${Fmt.shortHash(sweepResult.txid)}` : `error: ${sweepResult.error}`)
+        : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy || !destAddr,
+                         onclick: () => Actions.sweepRecovered(item, destAddr) },
+            s.busy ? 'Sweeping…' : 'Sweep to current address'),
+    ]),
+  ]);
+}
+
+function renderTipPanel(s) {
+  const amtId = 'tip-amt';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Tip the developer'),
+    el('p', { class: 'muted' }, 'Optional. Sends a small amount from your current address to:'),
+    el('code', { style: 'display:block;margin-bottom:8px' }, TIPPING_ADDRESS),
+    el('div', { class: 'row' }, [
+      el('input', { id: amtId, type: 'number', min: '546', step: '1', placeholder: '1000 (sats)' }),
+      el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy,
+                     onclick: () => Actions.buildSend(TIPPING_ADDRESS, $(amtId).value) }, 'Build tip'),
+    ]),
+    el('p', { class: 'muted', style: 'font-size:11px;margin-top:8px' },
+      'Tip uses the same confirm-and-broadcast flow as Send — review the transaction before broadcasting.'),
+  ]);
+}
+
+function renderExportPanel(s) {
+  const d = s.draft || {};
+  const exported = d.exportedMnemonic;
+  const pwId = 'export-pw';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Export mnemonic'),
+    el('p', { class: 'warn' }, 'Re-enter your password to reveal the mnemonic for backup. Treat the displayed words like cash.'),
+    exported
+      ? el('div', {}, [
+          el('pre', {}, exported),
+          el('div', { class: 'row' }, [
+            el('button', { onclick: () => Actions.copy(exported, 'Mnemonic') }, 'Copy'),
+            el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download encrypted backup'),
+            el('button', { onclick: () => Actions.clearExport() }, 'Hide'),
+          ]),
+        ])
+      : el('div', {}, [
+          el('input', { id: pwId, type: 'password', placeholder: 'Password', autocomplete: 'current-password',
+                        onkeydown: (e) => { if (e.key === 'Enter') Actions.exportMnemonic($(pwId).value); } }),
+          el('div', { class: 'row', style: 'margin-top:8px' }, [
+            el('button', { class: 'primary', disabled: s.busy,
+                           onclick: () => Actions.exportMnemonic($(pwId).value) },
+              s.busy ? 'Checking…' : 'Reveal mnemonic'),
+          ]),
+        ]),
+  ]);
+}
+
+function renderHistoryPanel(s) {
+  const d = s.derived;
+  const items = s.history || [];
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Transaction history'),
+    !d ? el('p', { class: 'muted' }, 'No address derived.')
+       : el('div', {}, [
+        el('div', { class: 'row', style: 'margin-bottom:8px' }, [
+          el('button', { disabled: s.busy, onclick: () => Actions.loadHistory() },
+            s.busy ? 'Loading…' : (items.length ? 'Reload history' : 'Load history')),
+        ]),
+        items.length === 0
+          ? el('p', { class: 'muted' }, 'No transactions loaded.')
+          : el('div', {}, items.map(renderHistoryRow)),
+      ]),
+  ]);
+}
+
+function renderHistoryRow(tx) {
+  // EVERY field below comes from a third-party API. All values are written via
+  // textContent (el's default), never innerHTML. The whatsonchain link uses
+  // safeUrl()-validated href. Without this, the legacy XSS surface (esp.
+  // scriptPubKey.asm in tx-info) trivially reappears.
+  const txid = tx.tx_hash || tx.txid || '';
+  const height = tx.height ?? tx.blockheight ?? null;
+  const url = txid ? ('https://whatsonchain.com/tx/' + encodeURIComponent(txid)) : '#';
+  return el('div', { style: 'padding:8px 0;border-bottom:1px solid var(--border)' }, [
+    el('div', { style: 'display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap' }, [
+      el('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
+        Fmt.shortHash(txid)),
+      el('span', { class: 'muted', style: 'font-size:11px' },
+        height ? `block ${height}` : 'unconfirmed'),
+    ]),
+  ]);
+}
+
+function renderCreateShow(s) {
+  const m = s.draft.mnemonic || '';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Write down your mnemonic'),
+    el('p', { class: 'warn' }, 'This is the ONLY way to recover your wallet. Anyone with these words can spend your coins. Write them down on paper — do not screenshot, email, or photograph.'),
+    el('pre', { id: 'mnemonic-out' }, m),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.copyToClipboard(m) }, 'Copy to clipboard'),
+      el('button', { onclick: () => Actions.cancelCreate() }, 'Cancel'),
+      el('button', { class: 'primary', onclick: () => Actions.gotoConfirm() }, 'I have written it down →'),
+    ]),
+  ]);
+}
+function renderCreateConfirm(s) {
+  const m = (s.draft.mnemonic || '').split(/\s+/);
+  const lastIdx = m.length - 1;
+  const inputId = 'confirm-word';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Confirm you wrote it down'),
+    el('p', {}, [
+      'Type the ',
+      el('strong', {}, `${lastIdx + 1}th (last) word`),
+      ' of your mnemonic:',
+    ]),
+    el('input', {
+      id: inputId, type: 'text', placeholder: 'last word', autocomplete: 'off',
+      onkeydown: (e) => { if (e.key === 'Enter') Actions.checkLastWord($(inputId).value, m[lastIdx]); },
+    }),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.gotoShow() }, '← Show mnemonic again'),
+      el('button', { class: 'primary',
+                     onclick: () => Actions.checkLastWord($(inputId).value, m[lastIdx]) },
+        'Continue →'),
+    ]),
+  ]);
+}
+function renderImportEnter(s) {
+  const taId = 'mnemonic-in';
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Import mnemonic'),
+    el('p', { class: 'muted' }, 'Paste your 12 or 24-word BIP39 mnemonic. Words separated by single spaces.'),
+    el('textarea', {
+      id: taId, rows: 4, autocomplete: 'off', spellcheck: 'false',
+      placeholder: 'abandon abandon abandon …',
+    }),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.gotoLanding() }, 'Back'),
+      el('button', { class: 'primary',
+                     onclick: () => Actions.submitImport($(taId).value) }, 'Continue →'),
+    ]),
+  ]);
+}
+function renderSetPassword(s, origin) {
+  const pw1 = 'pw1', pw2 = 'pw2', meterId = 'pw-meter';
+  const updateMeter = () => {
+    const v = $(pw1).value;
+    const score = passwordStrength(v);
+    const el2 = $(meterId);
+    if (el2) {
+      el2.textContent = `Strength: ${STRENGTH_LABEL[score]} (${v.length} chars)`;
+      el2.className = score >= 3 ? 'muted' : (score >= 2 ? 'warn' : 'err');
+    }
+  };
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Set a password'),
+    el('p', { class: 'muted' }, 'This password encrypts your mnemonic on this device. Minimum 12 characters. There is no recovery — if you forget it, you must wipe and re-import.'),
+    el('input', { id: pw1, type: 'password', placeholder: 'Password (≥12 chars)',
+                  autocomplete: 'new-password', oninput: updateMeter }),
+    el('input', { id: pw2, type: 'password', placeholder: 'Repeat password',
+                  autocomplete: 'new-password' }),
+    el('p', { id: meterId, class: 'muted' }, 'Strength: too weak (0 chars)'),
+    el('div', { class: 'row' }, [
+      el('button', { onclick: () => Actions.gotoLanding() }, 'Cancel'),
+      el('button', { class: 'primary', disabled: s.busy,
+                     onclick: () => Actions.setPassword($(pw1).value, $(pw2).value, origin) },
+        s.busy ? 'Encrypting…' : 'Save & unlock'),
+    ]),
+  ]);
+}
+function renderStatusBar(s) {
+  const bar = $('statusBar');
+  bar.className = '';
+  bar.textContent = '';
+  if (!s.status || s.status.kind === 'idle' || !s.status.msg) {
+    bar.classList.remove('show');
+    return;
+  }
+  bar.classList.add('show', s.status.kind);
+  bar.textContent = s.status.msg;
+}
+
+// Status helpers used everywhere.
+const Status = {
+  info(msg)  { setState({ status: { kind: 'info',  msg } }); },
+  error(msg) { setState({ status: { kind: 'error', msg } }); },
+  clear()    { setState({ status: { kind: 'idle',  msg: '' } }); },
+};
+
+// ====================== 09. EVENTS / ACTIONS ======================
+// All user-driven mutations go through Actions.* — each returns void, updates
+// state via setState, and surfaces errors via Status.error. Render functions
+// wire these as onclick handlers via el(...).
+const Actions = {
+  // ---- view navigation
+  gotoLanding()  { Status.clear(); setState({ view: 'landing', step: null, draft: {} }); },
+  gotoUnlock()   { Status.clear(); setState({ view: 'unlock',  step: null }); },
+  gotoShow()     { setState({ view: 'create', step: 'show' }); },
+  gotoConfirm()  { setState({ view: 'create', step: 'confirm' }); },
+
+  // ---- create flow
+  startCreate(entropyBits) {
+    try {
+      // bsv.Mnemonic.fromRandom() defaults to 128-bit; pass explicit bits if SDK
+      // accepts a length arg. Fallback: regenerate until word count matches.
+      let m;
+      if (entropyBits === 256) {
+        // Try API variants; if neither works, fall through to default.
+        m = (bsv.Mnemonic.fromRandom && bsv.Mnemonic.fromRandom.length >= 1)
+          ? bsv.Mnemonic.fromRandom(entropyBits)
+          : bsv.Mnemonic.fromRandom();
+        // Validate word count; if mismatch, just use whatever the SDK gave us.
       } else {
-        if (bipChoice == "32") {
-          keys = generateKeys32(0, 0);
-        } else {
-          keys = generateKeys(0, 0, 0, 0);
-        }
-        changePath = 0;
-        index = 0;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-
-        document.getElementById("changeStatus").innerHTML = "External";
-
-        // alert new keys generated
-        // store keys locally turn green
-        alert(
-          "New keys generated. Click store keys locally to store keys on device."
-        );
-        document.getElementById("storeKeysLocally").style.backgroundColor =
-          "green";
-        //scroll to store keys locally
-        document.getElementById("storeKeysLocally").scrollIntoView();
+        m = bsv.Mnemonic.fromRandom();
       }
-
-      document.getElementById("path1").addEventListener("change", () => {
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const coinPath = document.getElementById("coinPath").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        index = path3;
-        changePath = path2;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
+      const phrase = m.toString();
+      setState({
+        view: 'create', step: 'show',
+        draft: { mnemonic: phrase, source: 'create' },
       });
-      document.getElementById("path2").addEventListener("change", () => {
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const coinPath = document.getElementById("coinPath").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        index = path3;
-        changePath = path2;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
+    } catch (e) {
+      Status.error(`Could not generate mnemonic: ${e.message}`);
+    }
+  },
+  cancelCreate() { Actions.gotoLanding(); },
 
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-        if (changePath == 0) {
-          document.getElementById("receiveToggle").innerHTML =
-            "Get Change (Internal) Address";
-        } else {
-          document.getElementById("receiveToggle").innerHTML =
-            "Get Receive (External) Address";
-        }
+  checkLastWord(typed, expected) {
+    if ((typed || '').trim().toLowerCase() !== (expected || '').trim().toLowerCase()) {
+      Status.error('That word doesn\'t match — check your written copy.');
+      return;
+    }
+    Status.clear();
+    setState({ view: 'create', step: 'password' });
+  },
+
+  // ---- import flow
+  startImport() {
+    Status.clear();
+    setState({ view: 'import', step: 'enter', draft: { source: 'import' } });
+  },
+  submitImport(text) {
+    const phrase = (text || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const words = phrase.split(' ').filter(Boolean);
+    if (words.length !== 12 && words.length !== 24) {
+      Status.error(`Expected 12 or 24 words, got ${words.length}.`); return;
+    }
+    if (!bsv.Mnemonic.isValid(phrase)) {
+      Status.error('Invalid BIP39 mnemonic (bad word or failed checksum).'); return;
+    }
+    Status.clear();
+    setState({
+      view: 'import', step: 'password',
+      draft: { mnemonic: phrase, source: 'import' },
+    });
+  },
+
+  // ---- password set (used by both create and import)
+  async setPassword(pw1, pw2, origin) {
+    if (!pw1 || pw1.length < 12) { Status.error('Password must be at least 12 characters.'); return; }
+    if (pw1 !== pw2) { Status.error('Passwords do not match.'); return; }
+    if (passwordStrength(pw1) < 2) { Status.error('Password is too weak — mix character classes and length.'); return; }
+    const mnemonic = state.draft.mnemonic;
+    if (!mnemonic) { Status.error('No mnemonic in flow — start over.'); Actions.gotoLanding(); return; }
+
+    setState({ busy: true });
+    try {
+      await Vault.save(mnemonic, pw1);
+      // Open the wallet straight from RAM rather than round-tripping.
+      const wallet = Wallet.openFromMnemonic(mnemonic);
+      setState({
+        wallet, locked: false, vaultExists: true,
+        view: 'unlocked', step: null, draft: {},
+        busy: false,
       });
-      document.getElementById("path3").addEventListener("change", () => {
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const coinPath = document.getElementById("coinPath").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        index = path3;
-        changePath = path2;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
+      Actions._rederive();
+      Status.info(origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.');
+      AutoLock.arm();
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Could not save vault: ${e.message}`);
+    }
+  },
 
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
+  // ---- unlock
+  async unlock(password) {
+    if (!password) { Status.error('Enter your password.'); return; }
+    setState({ busy: true });
+    try {
+      const mnemonic = await Vault.unlock(password);
+      const wallet = Wallet.openFromMnemonic(mnemonic);
+      setState({
+        wallet, locked: false, view: 'unlocked', step: null, busy: false,
       });
-      document.getElementById("coinPath").addEventListener("change", () => {
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const coinPath = document.getElementById("coinPath").value;
-        const path3 = document.getElementById("path3").value;
+      Actions._rederive();
+      Status.info('Unlocked.');
+      AutoLock.arm();
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(e.message || 'Unlock failed.');
+    }
+  },
 
-        keys = generateKeys(coinPath, path1, path2, path3);
-        index = path3;
-        changePath = path2;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${path}`;
-        if (document.getElementById("path2").value == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-      });
+  // ---- lock / wipe
+  lock() {
+    setState({ wallet: null, locked: true, view: 'landing', step: null, draft: {} });
+    AutoLock.disarm();
+    Status.info('Locked.');
+  },
+  confirmWipe() {
+    const typed = prompt('Type DELETE to wipe the local vault. This cannot be undone.');
+    if (typed !== 'DELETE') { Status.info('Wipe cancelled.'); return; }
+    Vault.wipe();
+    setState({
+      wallet: null, locked: true, vaultExists: false,
+      view: 'landing', step: null, draft: {},
+    });
+    Status.info('Vault wiped.');
+  },
 
-      const generate21Addresses = () => {
-        const addresses = [];
-        const coinPath = document.getElementById("coinPath").value;
-        for (let i = 0; i < 21; i++) {
-          const newkeys = generateKeys(coinPath, 0, changePath, i);
-          addresses.push(newkeys.address);
-        }
-        document.getElementById("path3").value = 0;
-        const path1 = document.getElementById("path1").value;
-        currentPath = `m/44'/${coinPath}'/${path1}'/${changePath}/0`;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${currentPath}`;
-        return addresses;
-      };
+  // ---- clipboard (no auto-copy — only on explicit click)
+  async copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      Status.info('Copied to clipboard.');
+    } catch {
+      Status.error('Clipboard copy failed (browser blocked it).');
+    }
+  },
+  copy(text, label) {
+    Actions.copyToClipboard(text).then(() => {
+      if (label) Status.info(`${label} copied.`);
+    });
+  },
 
-      const broadast = async (tx) => {
-        try {
-          const response = await fetch(
-            `https://api.whatsonchain.com/v1/bsv/main/tx/raw`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                txhex: tx.toString(),
-              }),
-            }
-          );
-          const data = await response.json();
-          return data;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
+  // ---- derivation: preset / bip toggle / individual path fields
+  // Each mutator re-derives synchronously and persists the (non-sensitive) prefs.
+  setPreset(name) {
+    const p = PRESETS[name];
+    if (!p) return;
+    const patch = { preset: name, bip: p.bip };
+    if (p.bip === 44) {
+      patch.coin = p.coin ?? 0;
+      patch.account = p.account ?? 0;
+      patch.change = 0;
+      patch.addrIndex = 0;
+    } else {
+      patch.change = 0;
+      patch.addrIndex = 0;
+    }
+    setState(patch);
+    Actions._rederive();
+  },
+  setBip(b) {
+    if (b !== 32 && b !== 44) return;
+    setState({ bip: b, change: 0, addrIndex: 0,
+               preset: b === 32 ? 'bip32basic' : 'default' });
+    Actions._rederive();
+  },
+  setPathField(field, raw) {
+    const n = Math.max(0, parseInt(raw, 10) || 0);
+    if (!['coin','account','change','addrIndex'].includes(field)) return;
+    setState({ [field]: n, preset: null });   // custom path -> no preset is active
+    Actions._rederive();
+  },
+  toggleHideKeys() {
+    setState({ hideKeys: !state.hideKeys });
+    Prefs.save(state);
+  },
 
-      const getUnspentUtxos = async (address) => {
-        try {
-          const response = await fetch(
-            `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`
-          );
-          const data = await response.json();
-          console.log(data);
-          const utxos = data.map((utxo) => {
-            return {
-              txid: utxo.tx_hash,
-              vout: utxo.tx_pos,
-              script: bsv.Script.buildPublicKeyHashOut(address),
-              satoshis: utxo.value,
-            };
-          });
-          return utxos;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
+  // Internal: re-derive from current wallet + prefs, save prefs, clear caches.
+  _rederive() {
+    if (!state.wallet || !state.wallet.root) return;
+    try {
+      const derived = Derive.derive(state.wallet.root, state);
+      // Path change invalidates any address-scoped data (balance/history).
+      setState({ derived, balance: null, history: [] });
+      Prefs.save(state);
+    } catch (e) {
+      Status.error(`Derivation failed: ${e.message}`);
+    }
+  },
 
-      document.getElementById("send").addEventListener("click", async () => {
-        try {
-          const address = document.getElementById("addressSend").value;
-          const amount = document.getElementById("amountSend").value;
-          if (!address || !amount) {
-            alert("Please enter address and amount.");
-            return;
-          }
-          const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
-          const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-          const addressFrom = bsv.Address.fromPublicKey(publicKey).toString();
-          console.log(addressFrom);
-          const utxos = await getUnspentUtxos(addressFrom);
-          const tx = new bsv.Transaction();
-          tx.from(utxos) // Set the unspent transaction outputs
-            .to(address, parseInt(amount)) // Specify the recipient and amount to send
-            .change(addressFrom) // Set the change address
-            .feePerKb(15) // Set the fee per kilobyte to use when calculating the fee
-            .sign(privateKey);
-          const txString = tx.toString();
-          console.log(txString);
-          const txDiv = document.getElementById("resultTxid");
-          const txP = document.createElement("p");
-          txP.innerHTML = txString;
-          txP.title = "Click to copy transaction string to clipboard.";
-          const titleP = document.createElement("p");
-          titleP.innerHTML =
-            "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
-          txDiv.appendChild(titleP);
-          txDiv.appendChild(txP);
-          txP.addEventListener("click", () => {
-            copyToClipboard(txString);
-            alert("Transaction copied to clipboard.");
-          });
-          const broadcastButton = document.createElement("button");
-          broadcastButton.innerHTML = "Broadcast";
-          txDiv.appendChild(broadcastButton);
-          document.getElementById("send").style.display = "none";
-          broadcastButton.addEventListener("click", async () => {
-            if (!confirm("Are you sure you want to send?")) {
-              return;
-            }
-            const txid = await broadast(tx);
-            console.log(txid);
-            alert(`Transaction sent. Txid: ${txid}`);
-            //replace with txid
-            txDiv.innerHTML = `Transaction sent. Txid: <a href='https://whatsonchain.com/tx/${txid}' target='_blank'>${txid}</a>`;
-            broadcastButton.style.display = "none";
-          });
-        } catch (e) {
-          alert(e.message);
-        }
-      });
-
-      const getTxHistory = async (address) => {
-        try {
-          const response = await fetch(
-            `https://api.whatsonchain.com/v1/bsv/main/address/${address}/history`
-          );
-          const data = await response.json();
-          // console.log(data);
-          return data;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
-
-      // copy to clipboard mnemonic if clicked
-      const copyToClipboard = (text) => {
-        const elem = document.createElement("textarea");
-        elem.value = text;
-        document.body.appendChild(elem);
-        elem.select();
-        document.execCommand("copy");
-        document.body.removeChild(elem);
-      };
-      document.getElementById("mnemonic").addEventListener("click", () => {
-        copyToClipboard(keys.mnemonic);
-        alert("Mnemonic copied to clipboard.");
-      });
-
-      const broadcast = async (tx) => {
-        try {
-          const response = await fetch(
-            `https://api.whatsonchain.com/v1/bsv/main/tx/raw`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                txhex: tx.toString(),
-              }),
-            }
-          );
-          const data = await response.json();
-          return data;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
-
-      const getTxInfo = async (txid) => {
-        try {
-          const response = await fetch(
-            `https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`
-          );
-          const data = await response.json();
-          return data;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
-
-      const consolidateUtxos = async (address) => {
-        try {
-          const utxos = await getUnspentUtxos(address);
-          console.log(utxos);
-          const tx = new bsv.Transaction().from(utxos);
-          tx.feePerKb(15);
-          tx.change(address);
-          tx.sign(bsv.PrivateKey.fromWIF(keys.privateKey));
-          const txid = await broadcast(tx);
-          console.log(txid);
-          alert(`Transaction sent. Txid: ${txid}`);
-          return txid;
-        } catch (e) {
-          alert(e.message);
-        }
-      };
-
-      async function getUnspentUtxos2(addressObject) {
-        try {
-          const addresses = addressObject.map((address) => {
-            return address.address;
-          });
-          const response = await fetch(
-            "https://api.bitails.io/address/unspent/multi",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ addresses }),
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          // bring back rest of object
-          const data = await response.json();
-          addresses.forEach((address) => {
-            data.forEach((utxo) => {
-              if (utxo.address == address) {
-                utxo.path = addressObject.find(
-                  (addressObject) => addressObject.address == address
-                ).path;
-                utxo.wif = addressObject.find(
-                  (addressObject) => addressObject.address == address
-                ).wif;
-                utxo.unspent = utxo.unspent.map((ut) => {
-                  return {
-                    txid: ut.txid,
-                    vout: ut.vout,
-                    script: bsv.Script.buildPublicKeyHashOut(address),
-                    satoshis: ut.satoshis,
-                  };
-                });
-              }
-            });
-          });
-          return data;
-        } catch (e) {
-          alert(e.message);
-        }
+  // ---- network: price (boot-time, best effort) / balance / history
+  async fetchPrice() {
+    try {
+      const data = await Net.woc.price();
+      if (data && typeof data.rate === 'number') setState({ price: data.rate });
+    } catch (e) {
+      // Non-fatal: just leaves USD column empty.
+      console.warn('price fetch failed:', e.message);
+    }
+  },
+  async refreshBalance() {
+    if (!state.derived) { Status.error('No address derived.'); return; }
+    setState({ busy: true });
+    try {
+      const data = await Net.woc.balance(state.derived.address);
+      if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
+        throw new Error('Unexpected balance response');
       }
-      const getTxHistoryAll = async () => {
-        const historyArray = [];
-        const addresses = [];
-        if (bipChoice == "44") {
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          for (let i = 0; i < 49; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            const newkeys = generateKeys(coinPath, path1, 0, i);
-            const newkeys2 = generateKeys(coinPath, path1, 1, i);
-            document.getElementById(
-              "historyResult"
-            ).innerHTML = `Searching addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
-            addresses.push({
-              address: newkeys.address,
-              path: newkeys.path,
-              wif: newkeys.privateKey,
-            });
-            addresses.push({
-              address: newkeys2.address,
-              path: newkeys2.path,
-              wif: newkeys2.privateKey,
-            });
-          }
-        } else {
-          const external = 0;
-          const internal = 1;
-          for (let i = 0; i < 49; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            const newkeys = generateKeys32(external, i);
-            const newkeys2 = generateKeys32(internal, i);
-            document.getElementById(
-              "historyResult"
-            ).innerHTML = `Searching addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
-            addresses.push({
-              address: newkeys.address,
-              path: newkeys.path,
-              wif: newkeys.privateKey,
-            });
-            addresses.push({
-              address: newkeys2.address,
-              path: newkeys2.path,
-              wif: newkeys2.privateKey,
-            });
-          }
+      setState({ balance: { confirmed: data.confirmed, unconfirmed: data.unconfirmed }, busy: false });
+      Status.clear();
+      // Refresh price if we don't have it yet (cheap fallback).
+      if (state.price == null) Actions.fetchPrice();
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Balance fetch failed: ${e.message}`);
+    }
+  },
+  // ---- send flow: build (preview) then broadcast (confirm)
+  async buildSend(toRaw, amtRaw) {
+    Status.clear();
+    if (!state.derived) { Status.error('No address derived.'); return; }
+    const to = (toRaw || '').trim();
+    if (!to) { Status.error('Enter a recipient address.'); return; }
+    if (!isValidAddress(to)) { Status.error('Recipient address is not a valid BSV address.'); return; }
+    const sats = parseInt(String(amtRaw).trim(), 10);
+    if (!Number.isFinite(sats) || !Number.isInteger(sats) || sats <= 0) {
+      Status.error('Amount must be a positive whole number of satoshis.');
+      return;
+    }
+    if (sats < 546) { Status.error('Amount is below dust threshold (546 sats).'); return; }
+
+    setState({ busy: true });
+    try {
+      const raw = await Net.woc.unspent(state.derived.address);
+      const utxos = normalizeWocUtxos(raw, state.derived.address);
+      if (utxos.length === 0) throw new Error('No spendable UTXOs at this address.');
+      const priv = bsv.PrivateKey.fromWIF(state.derived.wif);
+      const draft = TxBuilder.send({
+        utxos, toAddress: to, sats,
+        privateKey: priv, fromAddress: state.derived.address,
+      });
+      setState({
+        draftTx: { ...draft, to, tx: undefined /* drop tx to keep state JSON-clean */ },
+        busy: false,
+      });
+      Status.info('Transaction built. Review and confirm to broadcast.');
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Build failed: ${e.message}`);
+    }
+  },
+  cancelSend() { setState({ draftTx: null }); Status.info('Send cancelled.'); },
+  async broadcastSend() {
+    const d = state.draftTx;
+    if (!d || !d.hex) { Status.error('No draft transaction.'); return; }
+    setState({ busy: true });
+    try {
+      const txid = await Net.woc.broadcast(d.hex);
+      const cleanTxid = typeof txid === 'string' ? txid.trim().replace(/^"|"$/g, '') : String(txid);
+      setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
+      Status.info(`Broadcast OK. Txid: ${cleanTxid}`);
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Broadcast failed: ${e.message}`);
+    }
+  },
+
+  // ---- recovery scan + sweep
+  async scanRecovery() {
+    if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
+    setState({ busy: true, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
+    try {
+      const onProgress = (p) => {
+        if (p.stage === 'scanning') {
+          setState({ recovery: { ...state.recovery, done: p.done, total: p.total } });
         }
-        const addressArray = [];
-        addresses.forEach((address) => {
-          addressArray.push(address.address);
-        });
-        const url = "https://api.bitails.io/address/history/multi";
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ addresses: addressArray }),
-        });
-        const data = await response.json();
-        console.log(data);
-        return data;
       };
-
-      let historyStatus = false;
-      document.getElementById("history").addEventListener("click", async () => {
-        if (historyStatus) {
-          document.getElementById("historyResult").innerHTML = "";
-          document.getElementById("historyResult").style.border = "none";
-
-          document.getElementById("history").innerHTML = "Transaction History";
-          historyStatus = false;
-          return;
-        }
-        historyStatus = true;
-        document.getElementById("history").innerHTML =
-          "Close Transaction History";
-        const historyResult = document.getElementById("historyResult");
-        historyResult.innerHTML = "";
-        historyResult.style.border = "none";
-        const title = document.createElement("h2");
-        title.innerHTML = "Transaction History:";
-        historyResult.appendChild(title);
-        const addressHistory = await getTxHistoryAll();
-        console.log(addressHistory);
-        addressHistory.forEach((tx) => {
-          //inputSatoshis
-          //outputSatoshis
-          //time
-          //blockheight
-          const txDiv = document.createElement("div");
-          const txP = document.createElement("p");
-          txP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${tx.txid}" target="_blank">${tx.txid}</a></br>Time: ${tx.time}</br>Blockheight: ${tx.blockheight}</br>Inputs: ${tx.inputSatoshis}</br>Outputs: ${tx.outputSatoshis}`;
-          txDiv.appendChild(txP);
-          const txInfo = document.createElement("button");
-          txInfo.innerHTML = "Transaction Info";
-          txDiv.appendChild(txInfo);
-          txInfo.addEventListener("click", async () => {
-            const txInfo = await getTxInfo(tx.txid);
-            console.log(txInfo);
-            const txInfoDiv = document.createElement("div");
-            // const txInfoP = document.createElement("p");
-            // txInfoP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txInfo.txid}" target="_blank">${txInfo.txid}</a></br>Time: ${txInfo.time}</br>Blockheight: ${txInfo.blockheight}</br>Inputs: ${txInfo.inputSatoshis}</br>Outputs: ${txInfo.outputSatoshis}`;
-            // txInfoDiv.appendChild(txInfoP);
-            const txInfoTitle = document.createElement("h3");
-            txInfoTitle.innerHTML = "Transaction Info:";
-            txInfoDiv.appendChild(txInfoTitle);
-            const txInfoInputsTitle = document.createElement("h3");
-            txInfoInputsTitle.innerHTML = "Inputs:";
-            txInfoDiv.appendChild(txInfoInputsTitle);
-            txInfoDiv.appendChild(document.createElement("hr"));
-            txInfo.vin.forEach((input) => {
-              const inputP = document.createElement("p");
-              inputP.innerHTML = `Txid:<a href="https://whatsonchain.com/tx/${input.txid}" target="_blank">${input.txid}</a></br>Vout: ${input.vout}</br>Sequence: ${input.sequence}`;
-              txInfoDiv.appendChild(inputP);
-              txInfoDiv.appendChild(document.createElement("hr"));
-            });
-            const txInfoOutputsTitle = document.createElement("h3");
-            txInfoOutputsTitle.innerHTML = "Outputs:";
-            txInfoDiv.appendChild(txInfoOutputsTitle);
-            txInfoDiv.appendChild(document.createElement("hr"));
-            txInfo.vout.forEach((output, i) => {
-              const outputP = document.createElement("p");
-              outputP.innerHTML = `Output: ${i}</br>Value: ${output.value}</br>Script: ${output.scriptPubKey.asm}`;
-              txInfoDiv.appendChild(outputP);
-              // txInfoDiv.appendChild(document.createElement("hr"));
-            });
-            const dashP = document.createElement("p");
-            dashP.innerHTML = "---------------------";
-            txInfoDiv.appendChild(dashP);
-            txDiv.appendChild(txInfoDiv);
-          });
-          historyResult.appendChild(txDiv);
-        });
+      const found = await Recovery.scan(state.wallet.root, state, { onProgress });
+      const totalSats = found.reduce((a, x) => a + x.totalSats, 0);
+      setState({
+        busy: false,
+        recovery: { scanning: false, found, totalSats, done: RECOVERY_DEPTH * 2, total: RECOVERY_DEPTH * 2 },
       });
-      //recover coins goes through first 21 change and receive addresses, checking for utxos, and consolidates them to first address
-      const totalRecoveryArray = [];
-      const recoverCoins = async () => {
-        const recoverArray = [];
-        const addresses = [];
-        if (bipChoice == "44") {
-          const coinPath = document.getElementById("coinPath").value;
-          const path1 = document.getElementById("path1").value;
-          for (let i = 0; i < 49; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            const newkeys = generateKeys(coinPath, path1, 0, i);
-            const newkeys2 = generateKeys(coinPath, path1, 1, i);
-            document.getElementById(
-              "recoverResult"
-            ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
-            addresses.push({
-              address: newkeys.address,
-              path: newkeys.path,
-              wif: newkeys.privateKey,
-            });
-            addresses.push({
-              address: newkeys2.address,
-              path: newkeys2.path,
-              wif: newkeys2.privateKey,
-            });
-          }
-        } else {
-          const external = 0;
-          const internal = 1;
-          for (let i = 0; i < 49; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-            const newkeys = generateKeys32(external, i);
-            const newkeys2 = generateKeys32(internal, i);
-            document.getElementById(
-              "recoverResult"
-            ).innerHTML = `Recovering coins from addresses:</br>Path:${newkeys.path}</br> ${newkeys.address} </br> Path: ${newkeys2.path} </br>${newkeys2.address}`;
-            addresses.push({
-              address: newkeys.address,
-              path: newkeys.path,
-              wif: newkeys.privateKey,
-            });
-            addresses.push({
-              address: newkeys2.address,
-              path: newkeys2.path,
-              wif: newkeys2.privateKey,
-            });
-          }
-        }
-        const utxos = await getUnspentUtxos2(addresses);
-        return utxos;
-      };
-      let recovered = false;
-      document.getElementById("recover").addEventListener("click", async () => {
-        if (recovered) {
-          document.getElementById("recoverResult").innerHTML = "";
-          document.getElementById("recoverResult").style.border = "none";
-
-          document.getElementById("recover").innerHTML = "Recover Coins";
-          recovered = false;
-          return;
-        }
-        recovered = true;
-        let total = 0;
-        const utxos = await recoverCoins();
-        //add to total recovery array
-        totalRecoveryArray.push(utxos);
-        const recoverResult = document.getElementById("recoverResult");
-        recoverResult.innerHTML = "";
-        recoverResult.style.border = "none";
-        const title = document.createElement("h2");
-        if (totalRecoveryArray.length == 0) {
-          title.innerHTML = "No coins to recover.";
-        } else {
-          title.innerHTML = "Coins Found:";
-        }
-        const totalP = document.createElement("p");
-        recoverResult.appendChild(title);
-        recoverResult.appendChild(totalP);
-        totalRecoveryArray.forEach((ut) => {
-          ut.forEach((utxo) => {
-            // console.log(utxo);
-            const address = utxo.address;
-            const path = utxo.path;
-            const unspent = utxo.unspent;
-            const p = document.createElement("p");
-            const addyP = document.createElement("p");
-            addyP.innerHTML = `Address: ${address}`;
-            const pathP = document.createElement("p");
-            pathP.innerHTML = `Path: ${path}`;
-            const unspentP = document.createElement("div");
-
-            unspent.forEach((ut) => {
-              // console.log(ut);
-              const utxoDiv = document.createElement("div");
-              const utxoP = document.createElement("p");
-              utxoP.innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${ut.txid}" target="_blank">${ut.txid}</a></br>Vout:${ut.vout}</br>Satoshis: ${ut.satoshis}`;
-              utxoDiv.appendChild(utxoP);
-              total += ut.satoshis;
-              const send = document.createElement("button");
-              send.innerHTML = "Generate Transaction";
-              const receiver = document.createElement("input");
-              receiver.placeholder = "receiver address";
-              let generated = false;
-              let tx;
-              send.addEventListener("click", async () => {
-                if (!generated) {
-                  generated = true;
-                  const privateKey = bsv.PrivateKey.fromWIF(utxo.wif);
-                  const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-                  const addressFrom =
-                    bsv.Address.fromPublicKey(publicKey).toString();
-                  tx = new bsv.Transaction();
-                  tx.from(ut)
-                    .feePerKb(15)
-                    .to(
-                      receiver.value,
-                      parseInt(ut.satoshis - tx._estimateFee())
-                    )
-                    .change(addressFrom)
-                    .sign(privateKey);
-                  const txString = tx.toString();
-                  const txStringP = document.createElement("p");
-                  const txStringDescription = document.createElement("p");
-                  txStringDescription.innerHTML =
-                    "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
-                  txStringP.innerHTML = txString;
-                  txStringP.addEventListener("click", () => {
-                    copyToClipboard(txString);
-                    alert("Transaction string copied to clipboard.");
-                  });
-                  txStringP.title = "Click to copy to clipboard.";
-                  utxoDiv.appendChild(txStringDescription);
-
-                  //change button to broadcast
-                  send.innerHTML = "Broadcast Transaction";
-                  // scroll to send
-                  send.scrollIntoView();
-                  utxoDiv.appendChild(txStringP);
-                }
-                send.addEventListener("click", async () => {
-                  if (
-                    !confirm(
-                      "Are you sure you want to broadcast this transaction?"
-                    )
-                  ) {
-                    return;
-                  }
-                  if (generated) {
-                    send.innerHTML = "Broadcasting...";
-                    const txid = await broadast(tx);
-                    const resultP = document.createElement("p");
-                    resultP.innerHTML = `Result Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
-                    //clear utxo div
-                    utxoDiv.innerHTML = "";
-                    utxoDiv.appendChild(resultP);
-                    // scroll to result
-                    resultP.scrollIntoView();
-                    alert(`Transaction sent. Txid: ${txid}`);
-                    //disable send button
-                    send.disabled = true;
-                    send.style.backgroundColor = "#0056b3";
-                    send.innerHTML = "Transaction Sent";
-                  } else {
-                    alert("Generate transaction first.");
-                  }
-                });
-              });
-              receiver.style.display = "block";
-              receiver.style.width = "100%";
-              receiver.style.marginBottom = "10px";
-
-              utxoDiv.appendChild(receiver);
-              utxoDiv.appendChild(send);
-              const dashes = document.createElement("hr");
-              unspentP.appendChild(dashes);
-              unspentP.appendChild(utxoDiv);
-            });
-            unspentP.style.display = "block";
-            unspentP.style.border = "1px solid black";
-            unspentP.style.borderRadius = "10px";
-            unspentP.style.backgroundColor = "#e6e6e6";
-            unspentP.style.width = "100%";
-            unspentP.style.padding = "10px";
-            const breaker = document.createElement("br");
-            const dashes = document.createElement("hr");
-            recoverResult.appendChild(dashes);
-            recoverResult.appendChild(pathP);
-            recoverResult.appendChild(addyP);
-            recoverResult.appendChild(unspentP);
-            recoverResult.appendChild(breaker);
-          });
-        });
-        recoverResult.style.display = "block";
-        const totalUSD = (total * currentPrice) / 100000000;
-        totalP.innerHTML = `Total: ${total} satoshis | ${
-          totalUSD > 0.01 ? totalUSD.toFixed(2) : totalUSD.toFixed(4)
-        } USD`;
-        recoverResult.style.padding = "10px";
-        recoverResult.style.border = "1px solid black";
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: m/44'/${coinPath}'/${path1}'/0/0`;
-        document.getElementById("recover").innerHTML = "Hide Recovery Results";
-        return total;
+      Status.info(found.length === 0 ? 'Recovery scan complete — nothing found.' : `Found ${found.length} addresses with ${Fmt.sats(totalSats)} sats.`);
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Recovery scan failed: ${e.message}`);
+    }
+  },
+  async sweepRecovered(item, destAddress) {
+    if (!destAddress) { Status.error('No destination address — derive one first.'); return; }
+    if (!item || !item.utxos || item.utxos.length === 0) { Status.error('Nothing to sweep.'); return; }
+    setState({ busy: true });
+    try {
+      const priv = bsv.PrivateKey.fromWIF(item.wif);
+      const draft = TxBuilder.send({
+        utxos: item.utxos, toAddress: destAddress, sats: 'max',
+        privateKey: priv, fromAddress: item.address,
       });
+      const txidRaw = await Net.woc.broadcast(draft.hex);
+      const txid = typeof txidRaw === 'string' ? txidRaw.trim().replace(/^"|"$/g, '') : String(txidRaw);
+      // Record per-path sweep result so the row updates without re-rendering everything else.
+      const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
+      swept[item.path] = { ok: true, txid };
+      setState({ busy: false, draft: { ...state.draft, swept } });
+      Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${item.address}: ${txid}`);
+    } catch (e) {
+      const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
+      swept[item.path] = { ok: false, error: e.message };
+      setState({ busy: false, draft: { ...state.draft, swept } });
+      Status.error(`Sweep failed: ${e.message}`);
+    }
+  },
 
-      document.getElementById("export").addEventListener("click", () => {
-        const exportResult = document.getElementById("exportResult");
-        //create link to download
-        const a = document.createElement("a");
-        const file = new Blob([JSON.stringify(keys)], { type: "text/plain" });
-        a.href = URL.createObjectURL(file);
-        a.download = "keys.json";
-        a.click();
-      });
-      document
-        .getElementById("tipButton")
-        .addEventListener("click", async () => {
-          // if (!confirm("Are you sure you want to leave a tip?")) {
-          //   return;
-          // }
-          const tipAmount = document.getElementById("tipAmount").value;
-          const privateKey = bsv.PrivateKey.fromWIF(keys.privateKey);
-          const publicKey = bsv.PublicKey.fromPrivateKey(privateKey);
-          const addressFrom = bsv.Address.fromPublicKey(publicKey).toString();
-          if (!tipAmount) {
-            alert("Enter tip amount.");
-            return;
-          }
-          const utxos = await getUnspentUtxos(addressFrom);
-          const totalSats = utxos.reduce((acc, utxo) => {
-            return acc + utxo.satoshis;
-          }, 0);
-          if (totalSats < tipAmount) {
-            alert("Not enough funds.");
-            return;
-          }
-          const tx = new bsv.Transaction();
-          tx.from(utxos) // Set the unspent transaction outputs
-            .to(tippingAddress, parseInt(tipAmount)) // Specify the recipient and amount to send
-            .change(addressFrom) // Set the change address
-            .feePerKb(15) // Set the fee per kilobyte to use when calculating the fee
-            .sign(privateKey);
-          const txString = tx.toString();
-          console.log(txString);
-          const txDiv = document.getElementById("tipResult");
-          const txP = document.createElement("p");
-          txP.innerHTML = txString;
-          txP.title = "Click to copy transaction string to clipboard.";
-          const titleP = document.createElement("p");
-          titleP.innerHTML =
-            "Copy and paste this transaction string into a broadcast tool such as <a href='https://whatsonchain.com/broadcast' target='_blank'>Whatsonchain</a> to inspect the transaction.";
-          txDiv.appendChild(titleP);
-          txDiv.appendChild(txP);
-          txP.addEventListener("click", () => {
-            copyToClipboard(txString);
-            alert("Transaction copied to clipboard.");
-          });
-          const broadcastButton = document.createElement("button");
-          broadcastButton.innerHTML = "Broadcast";
-          txDiv.appendChild(broadcastButton);
-          broadcastButton.addEventListener("click", async () => {
-            if (!confirm("Are you sure you want to send?")) {
-              return;
-            }
-            const txid = await broadast(tx);
-            document.getElementById(
-              "tipResult"
-            ).innerHTML = `Txid: <a href="https://whatsonchain.com/tx/${txid}" target="_blank">${txid}</a>`;
-            console.log(txid);
-            alert(`Transaction sent. Txid: ${txid}`);
-          });
-        });
-      //radio buttons
-      document.getElementById("bip44").addEventListener("click", () => {
-        bipChoice = "44";
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        console.log(keys);
-        changePath = path2;
-        receivingPath = path1;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        //change status innerhtml
-        if (path2 == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-        document.getElementById("changePath").style.display = "block";
-        document.getElementById("changePath32").style.display = "none";
-      });
-      document.getElementById("bip32").addEventListener("click", () => {
-        bipChoice = "32";
-        const external = document.getElementById("path1a").value;
-        const path = document.getElementById("path2a").value;
-        keys = generateKeys32(external, path);
-        console.log(keys);
-        changePath = path;
-        receivingPath = external;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        //change status innerhtml
-        if (external == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-        // hide bip44
-        document.getElementById("changePath32").style.display = "block";
-        document.getElementById("changePath").style.display = "none";
-      });
-      if (bipChoice == "44") {
-        document.getElementById("bip44").checked = true;
-        const coinPath = document.getElementById("coinPath").value;
-        const path1 = document.getElementById("path1").value;
-        const path2 = document.getElementById("path2").value;
-        const path3 = document.getElementById("path3").value;
-        keys = generateKeys(coinPath, path1, path2, path3);
-        console.log(keys);
-        changePath = path2;
-        receivingPath = path1;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        //change status innerhtml
-        if (path2 == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-        document.getElementById("changePath").style.display = "block";
-        document.getElementById("changePath32").style.display = "none";
-      } else {
-        document.getElementById("bip32").checked = true;
-        document.getElementById("changePath32").style.display = "block";
-        document.getElementById("changePath").style.display = "none";
-        const external = document.getElementById("path1a").value;
-        const path = document.getElementById("path2a").value;
-        keys = generateKeys32(external, path);
-        console.log(keys);
-        changePath = path;
-        receivingPath = external;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        //changeStatus innerhtml
-        if (external == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-      }
+  // ---- export: re-verify password before revealing mnemonic
+  async exportMnemonic(pw) {
+    if (!pw) { Status.error('Enter your password.'); return; }
+    setState({ busy: true });
+    try {
+      const mnemonic = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
+      setState({ busy: false, draft: { ...state.draft, exportedMnemonic: mnemonic } });
+      Status.info('Mnemonic revealed. Hide when done.');
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(e.message || 'Wrong password.');
+    }
+  },
+  clearExport() {
+    const next = { ...state.draft }; delete next.exportedMnemonic;
+    setState({ draft: next });
+    Status.clear();
+  },
+  // Download the existing encrypted vault blob as a JSON file. The file itself
+  // is useless without the password; safe to email to yourself, archive, etc.
+  downloadEncryptedBackup() {
+    const blob = Vault.read();
+    if (!blob) { Status.error('No vault to back up.'); return; }
+    const data = new Blob([JSON.stringify(blob, null, 2)],
+      { type: 'application/json' });
+    const url = URL.createObjectURL(data);
+    const a = el('a', { href: url, download: `satofinder-vault-${Date.now()}.json` });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    Status.info('Encrypted backup downloaded.');
+  },
 
-      // event listener for path1a and path2a
-      document.getElementById("path1a").addEventListener("change", () => {
-        const external = document.getElementById("path1a").value;
-        const path = document.getElementById("path2a").value;
-        keys = generateKeys32(external, path);
-        console.log(keys);
-        changePath = path;
-        receivingPath = external;
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        //changeStatus innerhtml
-        if (external == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-      });
-      document.getElementById("path2a").addEventListener("change", () => {
-        const external = document.getElementById("path1a").value;
-        const path = document.getElementById("path2a").value;
+  async loadHistory() {
+    if (!state.derived) { Status.error('No address derived.'); return; }
+    setState({ busy: true });
+    try {
+      const data = await Net.woc.history(state.derived.address);
+      if (!Array.isArray(data)) throw new Error('Unexpected history response');
+      // Cap render at 100 most recent so the panel doesn't choke on busy
+      // addresses; WoC returns oldest-first, so reverse + slice.
+      const items = data.slice().reverse().slice(0, 100);
+      setState({ history: items, busy: false });
+      Status.info(items.length === 0 ? 'No transactions on this address.' : `${items.length} tx loaded.`);
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`History fetch failed: ${e.message}`);
+    }
+  },
+};
 
-        keys = generateKeys32(external, path);
-        console.log(keys);
+// Wallet: thin shell over the SDK, returned by Vault.unlock or setPassword.
+// Stays in RAM only; never persisted.
+const Wallet = {
+  openFromMnemonic(phrase) {
+    const m = bsv.Mnemonic.fromString(phrase);
+    const seed = m.toSeed();
+    const root = bsv.HDPrivateKey.fromSeed(seed);
+    return { mnemonic: phrase, root };
+  },
+};
 
-        document.getElementById("mnemonic").innerHTML = keys.mnemonic;
-        document.getElementById("privateKey").innerHTML = keys.privateKey;
-        document.getElementById("publicKey").innerHTML = keys.publicKey;
-        document.getElementById("address").innerHTML = keys.address;
-        document.getElementById("currentAddress").innerHTML = keys.address;
-        document.getElementById(
-          "currentPath"
-        ).innerHTML = `Current Path: ${keys.path}`;
-        changePath = path;
-        receivingPath = external;
-        //changeStatus innerhtml
-        if (external == 0) {
-          document.getElementById("changeStatus").innerHTML =
-            "External/Receive Address";
-        } else {
-          document.getElementById("changeStatus").innerHTML =
-            "Internal/Change Address";
-        }
-      });
-      if (document.getElementById("path1a").value == 0) {
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-      } else {
-        document.getElementById("changeStatus").innerHTML =
-          "Internal/Change Address";
-      }
-      // event listener for bip44 change status
-      if (document.getElementById("path2").value == 0) {
-        document.getElementById("changeStatus").innerHTML =
-          "External/Receive Address";
-      } else {
-        document.getElementById("changeStatus").innerHTML =
-          "Internal/Change Address";
-      }
+// Auto-lock: clear the in-RAM wallet after AUTOLOCK_MS of inactivity (or when
+// the tab becomes hidden, which is more aggressive). User can opt out by
+// staying interactive.
+const AutoLock = {
+  _timer: null,
+  arm() {
+    AutoLock.disarm();
+    AutoLock._timer = setTimeout(() => {
+      if (!state.locked) Actions.lock();
+    }, AUTOLOCK_MS);
+  },
+  disarm() {
+    if (AutoLock._timer) { clearTimeout(AutoLock._timer); AutoLock._timer = null; }
+  },
+  bump() { if (!state.locked) AutoLock.arm(); },
+};
 
-      // send bsv input focus get balance
-      document
-        .getElementById("addressSend")
-        .addEventListener("focus", async () => {
-          document.getElementById("getBalance").click();
-        });
-      // add event listener input tip on focus
-      document
-        .getElementById("tipAmount")
-        .addEventListener("focus", async () => {
-          const address = keys.address;
-          const balance = await getBalance(address);
-          const total = balance.confirmed + balance.unconfirmed;
-          const totalUSD = (total * currentPrice) / 100000000;
-          document.getElementById(
-            "currentBalanceForTips"
-          ).innerHTML = `${total} satoshis | ${
-            totalUSD > 0.01 ? totalUSD.toFixed(2) : totalUSD.toFixed(4)
-          } USD`;
-        });
+function wireGlobalEvents() {
+  // Reset idle timer on any interaction.
+  for (const ev of ['mousemove','keydown','touchstart','focus']) {
+    window.addEventListener(ev, AutoLock.bump, { passive: true });
+  }
+  // Lock when tab is hidden — safer than waiting for the idle timeout.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && !state.locked) Actions.lock();
+  });
+}
 
-      //hide private key
-      const hidePrivateKeysBtn = document.getElementById("hidePrivateKeys");
-      const privateKeyEl = document.getElementById("privateKey");
-      const mnemonicEl = document.getElementById("mnemonic");
+// ====================== 10. BOOT ======================
+function boot() {
+  // Sanity: required SDK globals must be present after SRI-pinned CDN loads.
+  const missing = ['bsv'].filter(g => typeof window[g] === 'undefined');
+  if (missing.length) {
+    Status.error(`SDK not loaded: ${missing.join(', ')} — check CDN/SRI integrity.`);
+    return;
+  }
+  if (typeof bsv.Mnemonic !== 'function') {
+    Status.error('bsv.Mnemonic missing — bsv-mnemonic.min.js failed SRI or to load.');
+  }
+  subscribe(renderApp);
+  subscribe(renderStatusBar);
+  const prefs = Prefs.load();
+  setState({
+    vaultExists: Vault.exists(),
+    view: 'landing',
+    locked: true,
+    bip:      typeof prefs.bip       === 'number' ? prefs.bip       : 44,
+    coin:     typeof prefs.coin      === 'number' ? prefs.coin      : 0,
+    account:  typeof prefs.account   === 'number' ? prefs.account   : 0,
+    change:   typeof prefs.change    === 'number' ? prefs.change    : 0,
+    addrIndex: typeof prefs.addrIndex === 'number' ? prefs.addrIndex : 0,
+    preset:   typeof prefs.preset    === 'string' ? prefs.preset    : 'default',
+    hideKeys: typeof prefs.hideKeys  === 'boolean' ? prefs.hideKeys : true,
+  });
+  wireGlobalEvents();
+  // Fetch BSV price once at boot; non-fatal if it fails.
+  Actions.fetchPrice();
+  // Register service worker for offline + version-pinned CDN cache.
+  // Skipped on file:// and any context where SW isn't available.
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('./service-worker.js').then(
+      reg => console.info('SW registered, scope', reg.scope),
+      err => console.warn('SW registration failed', err.message));
+  }
+  console.info(`SatoFinder ${VERSION} booted`);
+}
 
-      hidePrivateKeysBtn.addEventListener("click", () => {
-        if (privateKeyEl.style.display == "none") {
-          privateKeyEl.style.display = "block";
-          mnemonicEl.style.display = "block";
-          hidePrivateKeysBtn.innerHTML = "Hide Private Keys";
-        } else {
-          privateKeyEl.style.display = "none";
-          mnemonicEl.style.display = "none";
-          hidePrivateKeysBtn.innerHTML = "Show Private Keys";
-        }
-      });
-      if (privateKeyEl.style.display == "none") {
-        privateKeyEl.style.display = "block";
-        mnemonicEl.style.display = "block";
-        hidePrivateKeysBtn.innerHTML = "Hide Private Keys";
-      } else {
-        privateKeyEl.style.display = "none";
-        mnemonicEl.style.display = "none";
-        hidePrivateKeysBtn.innerHTML = "Show Private Keys";
-      }
-
-      // Atomic wallet: m/44'/145'/0'/0/0
-      // Exodus: m/44'/236'/0'/0/0
-      // Keevo: m/44'/236'/0'
-      // Money button: m/44'/0'/0'
-      // Simply cash: m/44'/145'/0'
-      // RelayX m/44'/236'/0'/0/0
-
-      // select wallet type
-      document.getElementById("walletType").addEventListener("change", () => {
-        const walletType = document.getElementById("walletType").value;
-        if (walletType == "atomic") {
-          document.getElementById("coinPath").value = "145";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "exodus") {
-          document.getElementById("coinPath").value = "236";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "keevo") {
-          document.getElementById("coinPath").value = "236";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "simplycash") {
-          document.getElementById("coinPath").value = "145";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "relayx") {
-          document.getElementById("coinPath").value = "236";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "twetch") {
-          document.getElementById("coinPath").value = "0";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "moneybutton") {
-          document.getElementById("coinPath").value = "0";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "bip44") {
-          document.getElementById("coinPath").value = "0";
-          document.getElementById("path1").value = "0";
-          document.getElementById("path2").value = "0";
-          document.getElementById("path3").value = "0";
-          document.getElementById("bip44").click();
-        } else if (walletType == "bip32") {
-          document.getElementById("path1a").value = "0";
-          document.getElementById("path2a").value = "0";
-          document.getElementById("bip32").click();
-        }
-      });
-
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", function () {
-          navigator.serviceWorker.register("/service-worker.js").then(
-            function (registration) {
-              console.log(
-                "ServiceWorker registration successful with scope: ",
-                registration.scope
-              );
-            },
-            function (err) {
-              console.log("ServiceWorker registration failed: ", err);
-            }
-          );
-        });
-      }
-    </script>
-  </body>
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}
+/*<<SATOFINDER-SCRIPT-END>>*/
+  </script>
+</body>
 </html>
