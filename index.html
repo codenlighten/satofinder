@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-/zGbwMURfAkbq9U30UWSULGdtI6CyNvj0gKeORTfW/c=' https://cdn.jsdelivr.net;
+    script-src 'sha256-3VYRKJcTnHjNg7xzZnUbr9ngMTvXz/HFfYQCWm5ybnk=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io;
@@ -116,7 +116,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -212,6 +212,10 @@ const Crypto = {
 };
 
 // Vault persistence — single localStorage key, no plaintext anywhere.
+// Payload (v1) is JSON: { mnemonic, passphrase, createdAt }. The BIP39
+// passphrase ("25th word") is part of the seed material — it MUST live in the
+// encrypted blob alongside the mnemonic, or unlock would derive the wrong
+// wallet. Pre-2.1 vaults are missing the `passphrase` key and default to ''.
 const Vault = {
   exists() {
     try { return localStorage.getItem(VAULT_KEY) !== null; } catch { return false; }
@@ -219,8 +223,8 @@ const Vault = {
   read() {
     try { return JSON.parse(localStorage.getItem(VAULT_KEY)); } catch { return null; }
   },
-  async save(mnemonic, password) {
-    const payload = JSON.stringify({ mnemonic, createdAt: Date.now() });
+  async save(mnemonic, password, passphrase = '') {
+    const payload = JSON.stringify({ mnemonic, passphrase, createdAt: Date.now() });
     const blob = await Crypto.encrypt(password, payload);
     localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
   },
@@ -230,7 +234,8 @@ const Vault = {
     const json = await Crypto.decrypt(password, blob);
     const obj = JSON.parse(json);
     if (!obj.mnemonic || typeof obj.mnemonic !== 'string') throw new Error('Vault payload corrupt');
-    return obj.mnemonic;
+    // Older (pre-2.1) vaults are missing the passphrase field — default to ''.
+    return { mnemonic: obj.mnemonic, passphrase: typeof obj.passphrase === 'string' ? obj.passphrase : '' };
   },
   wipe() {
     localStorage.removeItem(VAULT_KEY);
@@ -728,7 +733,11 @@ function renderKeysPanel(s) {
       el('p', { class: 'muted' }, 'No derivation yet.'),
     ]);
   }
+  const hasPassphrase = !!(s.wallet && s.wallet.passphrase);
   const rows = [];
+  rows.push(el('div', { class: hasPassphrase ? 'warn' : 'muted', style: 'font-size:11px;margin-bottom:8px' },
+    hasPassphrase ? '⚑ BIP39 passphrase set — back up the passphrase alongside the mnemonic.'
+                  : 'BIP39 passphrase: none (standard).'));
   rows.push(makeKeyRow('Address', d.address, () => Actions.copy(d.address, 'Address')));
   rows.push(makeKeyRow('Public key', d.pub, () => Actions.copy(d.pub, 'Public key')));
   if (!s.hideKeys) {
@@ -737,9 +746,16 @@ function renderKeysPanel(s) {
     rows.push(makeKeyRow('Mnemonic', s.wallet && s.wallet.mnemonic,
       () => Actions.copy(s.wallet.mnemonic, 'Mnemonic'),
       'Your recovery phrase. Treat like cash.'));
+    if (hasPassphrase) {
+      rows.push(makeKeyRow('BIP39 passphrase', s.wallet.passphrase,
+        () => Actions.copy(s.wallet.passphrase, 'BIP39 passphrase'),
+        'Required IN ADDITION to the mnemonic to recover this wallet.'));
+    }
   } else {
     rows.push(el('div', { class: 'muted', style: 'margin-top:8px' },
-      'Private key and mnemonic hidden. Click "Show private keys" above to reveal.'));
+      hasPassphrase
+        ? 'Private key, mnemonic, and BIP39 passphrase hidden. Click "Show private keys" above to reveal.'
+        : 'Private key and mnemonic hidden. Click "Show private keys" above to reveal.'));
   }
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Keys'),
@@ -936,15 +952,24 @@ function renderTipPanel(s) {
 function renderExportPanel(s) {
   const d = s.draft || {};
   const exported = d.exportedMnemonic;
+  const exportedPass = d.exportedPassphrase || '';
   const pwId = 'export-pw';
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Export mnemonic'),
     el('p', { class: 'warn' }, 'Re-enter your password to reveal the mnemonic for backup. Treat the displayed words like cash.'),
     exported
       ? el('div', {}, [
+          el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, 'Mnemonic'),
           el('pre', {}, exported),
+          el('div', { class: 'muted', style: 'font-size:11px;margin-top:8px;margin-bottom:4px' }, 'BIP39 passphrase'),
+          el('pre', {}, exportedPass ? exportedPass : '(none — standard BIP39 default)'),
+          el('p', { class: 'warn', style: 'font-size:11px;margin-top:8px' },
+            exportedPass
+              ? 'Back up BOTH the mnemonic AND the BIP39 passphrase. Neither alone recovers your wallet.'
+              : 'No BIP39 passphrase on this wallet — mnemonic alone recovers it.'),
           el('div', { class: 'row' }, [
-            el('button', { onclick: () => Actions.copy(exported, 'Mnemonic') }, 'Copy'),
+            el('button', { onclick: () => Actions.copy(exported, 'Mnemonic') }, 'Copy mnemonic'),
+            exportedPass ? el('button', { onclick: () => Actions.copy(exportedPass, 'BIP39 passphrase') }, 'Copy passphrase') : null,
             el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download encrypted backup'),
             el('button', { onclick: () => Actions.clearExport() }, 'Hide'),
           ]),
@@ -1034,7 +1059,7 @@ function renderCreateConfirm(s) {
   ]);
 }
 function renderImportEnter(s) {
-  const taId = 'mnemonic-in';
+  const taId = 'mnemonic-in', ppId = 'bip39-pass-in';
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Import mnemonic'),
     el('p', { class: 'muted' }, 'Paste your 12 or 24-word BIP39 mnemonic. Words separated by single spaces.'),
@@ -1042,15 +1067,25 @@ function renderImportEnter(s) {
       id: taId, rows: 4, autocomplete: 'off', spellcheck: 'false',
       placeholder: 'abandon abandon abandon …',
     }),
-    el('div', { class: 'row' }, [
+    el('div', { style: 'margin-top:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+        'BIP39 passphrase (optional, also called the "25th word")'),
+      el('input', {
+        id: ppId, type: 'password', placeholder: '(leave blank if you did not set one)',
+        autocomplete: 'off', spellcheck: 'false',
+      }),
+      el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' },
+        'This is NOT your SatoFinder password — it is an extra secret some wallets (Trezor, Ledger, Electrum) use to derive a different set of addresses from the same mnemonic. If your other wallet asks for one, enter it here; otherwise leave blank.'),
+    ]),
+    el('div', { class: 'row', style: 'margin-top:12px' }, [
       el('button', { onclick: () => Actions.gotoLanding() }, 'Back'),
       el('button', { class: 'primary',
-                     onclick: () => Actions.submitImport($(taId).value) }, 'Continue →'),
+                     onclick: () => Actions.submitImport($(taId).value, $(ppId).value) }, 'Continue →'),
     ]),
   ]);
 }
 function renderSetPassword(s, origin) {
-  const pw1 = 'pw1', pw2 = 'pw2', meterId = 'pw-meter';
+  const pw1 = 'pw1', pw2 = 'pw2', meterId = 'pw-meter', bp1 = 'bip39-pp1', bp2 = 'bip39-pp2';
   const updateMeter = () => {
     const v = $(pw1).value;
     const score = passwordStrength(v);
@@ -1060,6 +1095,24 @@ function renderSetPassword(s, origin) {
       el2.className = score >= 3 ? 'muted' : (score >= 2 ? 'warn' : 'err');
     }
   };
+  // On Import, the BIP39 passphrase was captured on the previous screen and
+  // lives in draft — pass null so setPassword reads it from there. On Create,
+  // collect it here with a confirm field (typo in a passphrase = silently
+  // lost wallet, so we double-prompt).
+  const isImport = origin === 'import';
+  const importPp = state.draft && state.draft.passphrase;
+
+  const submit = () => {
+    if (isImport) {
+      // null sentinel -> setPassword falls back to state.draft.passphrase
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, null);
+    } else {
+      const a = $(bp1).value, b = $(bp2).value;
+      if (a !== b) { Status.error('BIP39 passphrases do not match.'); return; }
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, a);
+    }
+  };
+
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Set a password'),
     el('p', { class: 'muted' }, 'This password encrypts your mnemonic on this device. Minimum 12 characters. There is no recovery — if you forget it, you must wipe and re-import.'),
@@ -1068,10 +1121,26 @@ function renderSetPassword(s, origin) {
     el('input', { id: pw2, type: 'password', placeholder: 'Repeat password',
                   autocomplete: 'new-password' }),
     el('p', { id: meterId, class: 'muted' }, 'Strength: too weak (0 chars)'),
-    el('div', { class: 'row' }, [
+
+    isImport
+      ? el('p', { class: 'muted', style: 'font-size:11px;margin-top:8px' },
+          importPp
+            ? 'BIP39 passphrase from previous step will be saved with this vault.'
+            : 'No BIP39 passphrase — using empty (standard BIP39 default).')
+      : el('div', { style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' }, [
+          el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+            'BIP39 passphrase (optional — "25th word")'),
+          el('input', { id: bp1, type: 'password', placeholder: '(leave blank for standard BIP39)',
+                        autocomplete: 'off', spellcheck: 'false' }),
+          el('input', { id: bp2, type: 'password', placeholder: 'Repeat BIP39 passphrase',
+                        autocomplete: 'off', spellcheck: 'false', style: 'margin-top:4px' }),
+          el('div', { class: 'warn', style: 'font-size:11px;margin-top:4px' },
+            'If set, this adds an extra secret to your seed — your mnemonic alone will NOT recover your wallet without it. Different from the SatoFinder password above. Leave blank for the standard BIP39 default.'),
+        ]),
+
+    el('div', { class: 'row', style: 'margin-top:16px' }, [
       el('button', { onclick: () => Actions.gotoLanding() }, 'Cancel'),
-      el('button', { class: 'primary', disabled: s.busy,
-                     onclick: () => Actions.setPassword($(pw1).value, $(pw2).value, origin) },
+      el('button', { class: 'primary', disabled: s.busy, onclick: submit },
         s.busy ? 'Encrypting…' : 'Save & unlock'),
     ]),
   ]);
@@ -1146,7 +1215,7 @@ const Actions = {
     Status.clear();
     setState({ view: 'import', step: 'enter', draft: { source: 'import' } });
   },
-  submitImport(text) {
+  submitImport(text, passphrase) {
     const phrase = (text || '').trim().replace(/\s+/g, ' ').toLowerCase();
     const words = phrase.split(' ').filter(Boolean);
     if (words.length !== 12 && words.length !== 24) {
@@ -1158,30 +1227,36 @@ const Actions = {
     Status.clear();
     setState({
       view: 'import', step: 'password',
-      draft: { mnemonic: phrase, source: 'import' },
+      draft: { mnemonic: phrase, passphrase: passphrase || '', source: 'import' },
     });
   },
 
-  // ---- password set (used by both create and import)
-  async setPassword(pw1, pw2, origin) {
+  // ---- password set (used by both create and import). Accepts an optional
+  // BIP39 passphrase ("25th word") — different from pw1/pw2 which encrypt the
+  // local vault. Both are stored in the encrypted vault blob.
+  async setPassword(pw1, pw2, origin, bip39Pass) {
     if (!pw1 || pw1.length < 12) { Status.error('Password must be at least 12 characters.'); return; }
     if (pw1 !== pw2) { Status.error('Passwords do not match.'); return; }
     if (passwordStrength(pw1) < 2) { Status.error('Password is too weak — mix character classes and length.'); return; }
     const mnemonic = state.draft.mnemonic;
     if (!mnemonic) { Status.error('No mnemonic in flow — start over.'); Actions.gotoLanding(); return; }
+    // On Create, the passphrase comes from this screen's input. On Import, it
+    // was captured earlier on the mnemonic-entry screen and lives in draft.
+    const passphrase = (typeof bip39Pass === 'string' ? bip39Pass : state.draft.passphrase) || '';
 
     setState({ busy: true });
     try {
-      await Vault.save(mnemonic, pw1);
+      await Vault.save(mnemonic, pw1, passphrase);
       // Open the wallet straight from RAM rather than round-tripping.
-      const wallet = Wallet.openFromMnemonic(mnemonic);
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
       setState({
         wallet, locked: false, vaultExists: true,
         view: 'unlocked', step: null, draft: {},
         busy: false,
       });
       Actions._rederive();
-      Status.info(origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.');
+      const passNote = passphrase ? ' (BIP39 passphrase set)' : '';
+      Status.info((origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.') + passNote);
       AutoLock.arm();
     } catch (e) {
       setState({ busy: false });
@@ -1194,8 +1269,8 @@ const Actions = {
     if (!password) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
     try {
-      const mnemonic = await Vault.unlock(password);
-      const wallet = Wallet.openFromMnemonic(mnemonic);
+      const { mnemonic, passphrase } = await Vault.unlock(password);
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
       setState({
         wallet, locked: false, view: 'unlocked', step: null, busy: false,
       });
@@ -1412,13 +1487,17 @@ const Actions = {
     }
   },
 
-  // ---- export: re-verify password before revealing mnemonic
+  // ---- export: re-verify password before revealing mnemonic + passphrase
   async exportMnemonic(pw) {
     if (!pw) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
     try {
-      const mnemonic = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
-      setState({ busy: false, draft: { ...state.draft, exportedMnemonic: mnemonic } });
+      const { mnemonic, passphrase } = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
+      setState({ busy: false, draft: {
+        ...state.draft,
+        exportedMnemonic: mnemonic,
+        exportedPassphrase: passphrase || '',
+      }});
       Status.info('Mnemonic revealed. Hide when done.');
     } catch (e) {
       setState({ busy: false });
@@ -1426,7 +1505,9 @@ const Actions = {
     }
   },
   clearExport() {
-    const next = { ...state.draft }; delete next.exportedMnemonic;
+    const next = { ...state.draft };
+    delete next.exportedMnemonic;
+    delete next.exportedPassphrase;
     setState({ draft: next });
     Status.clear();
   },
@@ -1463,13 +1544,15 @@ const Actions = {
 };
 
 // Wallet: thin shell over the SDK, returned by Vault.unlock or setPassword.
-// Stays in RAM only; never persisted.
+// Stays in RAM only; never persisted. The BIP39 passphrase is part of the
+// seed material; pass '' for no passphrase (the BIP39 default — same as
+// other-wallet "I never set one").
 const Wallet = {
-  openFromMnemonic(phrase) {
+  openFromMnemonic(phrase, passphrase = '') {
     const m = bsv.Mnemonic.fromString(phrase);
-    const seed = m.toSeed();
+    const seed = m.toSeed(passphrase || '');   // BIP39 spec: empty -> salt is just "mnemonic"
     const root = bsv.HDPrivateKey.fromSeed(seed);
-    return { mnemonic: phrase, root };
+    return { mnemonic: phrase, passphrase: passphrase || '', root };
   },
 };
 

@@ -40,11 +40,22 @@
   <div class="panel">
     <p>On first visit you get three choices:</p>
     <ul>
-      <li><strong>Create new wallet</strong>: pick 12-word or 24-word entropy, write down the mnemonic, confirm by re-typing the last word, set a password.</li>
-      <li><strong>Import mnemonic</strong>: paste an existing 12/24-word BIP39 phrase, set a password.</li>
+      <li><strong>Create new wallet</strong>: pick 12-word or 24-word entropy, write down the mnemonic, confirm by re-typing the last word, set a password (and optionally a BIP39 passphrase).</li>
+      <li><strong>Import mnemonic</strong>: paste an existing 12/24-word BIP39 phrase, optionally provide a BIP39 passphrase, set a password.</li>
       <li><strong>Unlock</strong> (only if a vault already exists on this device).</li>
     </ul>
     <p class="warn">Write your mnemonic on paper. Do not screenshot or email it.</p>
+  </div>
+
+  <h2>BIP39 passphrase (the "25th word")</h2>
+  <div class="panel">
+    <p>BIP39 defines an <strong>optional</strong> passphrase that is fed into the seed derivation alongside the mnemonic. The same 12 or 24 words combined with a different passphrase produce a completely different wallet (different addresses, different keys). This is also known as the "25th word" or "BIP39 hidden wallet".</p>
+    <ul>
+      <li><strong>If you're importing</strong> from a wallet (Trezor, Ledger, Electrum, Sparrow, etc.) that uses a passphrase, you <strong>must</strong> enter the same passphrase here — otherwise SatoFinder will derive a different address set and show no coins even though your funds are safe on chain.</li>
+      <li><strong>If you're creating</strong> a new wallet you can leave it blank for the standard BIP39 default. Setting one adds a second secret you must back up alongside the mnemonic.</li>
+      <li>The passphrase is <strong>not</strong> the same thing as your SatoFinder unlock password. Both are stored encrypted in the same vault blob; both are required to derive your keys.</li>
+      <li>There is no passphrase recovery. If you set one and forget it, your funds are unreachable — the mnemonic alone is not enough.</li>
+    </ul>
   </div>
 
   <h2>Derivation</h2>
