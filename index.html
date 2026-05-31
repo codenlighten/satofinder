@@ -25,10 +25,10 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-K8wImv6r0qdo8cR/OisD112Oki8Z9ZfKJj+W6bY2Rk0=' https://cdn.jsdelivr.net;
+    script-src 'sha256-vaaY26EvS+524rBmXJa76qEXqyertNpyssyg92u0J8w=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
-    connect-src https://api.whatsonchain.com https://api.bitails.io;
+    connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
     manifest-src 'self';
     worker-src 'self';
     base-uri 'none';
@@ -116,7 +116,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.3.1';
+const VERSION = '2.4.0';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -130,6 +130,17 @@ const ENDPOINTS = Object.freeze({
   bitails: {
     unspentMulti: 'https://api.bitails.io/address/unspent/multi',
     historyMulti: 'https://api.bitails.io/address/history/multi',
+  },
+  // GorillaPool's 1Sat overlay (the per-address REST surface; distinct from
+  // junglebus.gorillapool.io which is the subscription firehose). The /txos
+  // endpoint classifies each output with origin.data.insc (inscription /
+  // ordinal), origin.data.bsv20 (BSV-20 token), or origin.data.lock — any of
+  // those three flags a UTXO that we MUST NOT spend as a plain sat or we
+  // could burn an NFT / destroy a token. Hard-block on unavailability is the
+  // safe default in Tokens.fetchProtected().
+  gorillapool: {
+    unspent:       (a) => `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent`,
+    bsv20Balance:  (a) => `https://ordinals.gorillapool.io/api/bsv20/${encodeURIComponent(a)}/balance`,
   },
 });
 
@@ -287,6 +298,8 @@ const state = {
   balance: null,                           // { confirmed, unconfirmed }
   history: [],
   recovery: null,
+  tokens: null,                            // { address, ordinals: [], bsv20: [...] } | null
+
 
   // ui prefs
   hideKeys: true,
@@ -442,6 +455,10 @@ const Net = {
                   body: JSON.stringify({ txhex: txHex }),
                 }),
   },
+  gorillapool: {
+    unspent:      (a) => api(ENDPOINTS.gorillapool.unspent(a)),
+    bsv20Balance: (a) => api(ENDPOINTS.gorillapool.bsv20Balance(a)),
+  },
   bitails: {
     unspentMulti: (addrs) => api(ENDPOINTS.bitails.unspentMulti, {
                     method: 'POST',
@@ -508,6 +525,70 @@ const Recovery = {
     }
     onProgress({ stage: 'done', total: candidates.length, found: found.length });
     return found;
+  },
+};
+
+// Tokens / ordinals classification. Wraps GorillaPool's 1Sat overlay
+// (ordinals.gorillapool.io). Every Send and Sweep MUST call protectedSet()
+// for the spend-side address before building a tx: if any UTXO in the WoC
+// unspent list carries an inscription, a BSV-20 marker, or a lock, spending
+// it as a plain sat would burn the NFT / destroy the token, so it must be
+// filtered out of the spendable set.
+//
+// Hard policy: if the indexer is unreachable or returns a non-array, we
+// THROW. Callers surface this as a block on the spend ("cannot verify your
+// UTXOs are safe to spend"). No "I accept the risk" override in v2.4 —
+// burning someone's NFT silently because an indexer was 503'd is exactly
+// the failure mode we're trying to remove.
+const Tokens = {
+  // Is this 1Sat-overlay txo "protected" (must not be spent as plain sat)?
+  isProtected(txo) {
+    if (!txo || typeof txo !== 'object') return false;
+    const o = txo.origin && txo.origin.data;
+    if (!o) return false;
+    return !!(o.insc || o.bsv20 || o.lock);
+  },
+  // Returns a Set of "txid:vout" strings for every protected UTXO at addr.
+  // Throws on indexer error — callers MUST catch and block the spend.
+  async protectedSet(addr) {
+    let raw;
+    try { raw = await Net.gorillapool.unspent(addr); }
+    catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build transaction — cannot verify UTXOs are safe to spend.`); }
+    if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned unexpected shape — refusing to build.');
+    const set = new Set();
+    for (const t of raw) {
+      if (Tokens.isProtected(t)) set.add(`${t.txid}:${t.vout}`);
+    }
+    return set;
+  },
+  // Filter a normalized UTXO list against a protected Set. Returns
+  // { spendable: [...], protectedCount: N }.
+  filter(utxos, protectedSet) {
+    const out = [];
+    let pc = 0;
+    for (const u of utxos) {
+      if (protectedSet.has(`${u.txid}:${u.vout}`)) pc++; else out.push(u);
+    }
+    return { spendable: out, protectedCount: pc };
+  },
+  // Pretty-print the classification of a single ordinal txo (for the Tokens
+  // panel). Pulls the most-useful fields out of the origin.data.{map,insc}
+  // shape; everything via textContent at the render layer, so even
+  // attacker-controlled `app`/`name` is rendered safely.
+  describeOrdinal(txo) {
+    const o = (txo.origin && txo.origin.data) || {};
+    const m = o.map || {};
+    const i = o.insc || {};
+    const f = i.file || {};
+    return {
+      outpoint: txo.outpoint || `${txo.txid}:${txo.vout}`,
+      satoshis: txo.satoshis,
+      name: m.name || '',
+      app:  m.app  || '',
+      type: f.type || '',
+      size: f.size || 0,
+      num:  (txo.origin && txo.origin.num) || '',
+    };
   },
 };
 
@@ -659,6 +740,7 @@ function renderUnlockedPlaceholder(s) {
     renderPathPanel(s),
     renderKeysPanel(s),
     renderBalancePanel(s),
+    renderTokensPanel(s),
     renderSendPanel(s),
     renderRecoveryPanel(s),
     renderHistoryPanel(s),
@@ -839,6 +921,61 @@ function renderBalancePanel(s) {
   ]);
 }
 
+function renderTokensPanel(s) {
+  const d = s.derived;
+  const t = s.tokens;
+  // Cached per-address; if cache is for a different address, treat as stale.
+  const fresh = t && d && t.address === d.address;
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Tokens & ordinals'),
+    !d ? el('p', { class: 'muted' }, 'No address derived.')
+       : el('div', {}, [
+        el('p', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
+          'Read-only view of 1Sat ordinals and BSV-20 tokens at the current address (via ordinals.gorillapool.io). These UTXOs are automatically excluded from Send and Sweep so you can\'t accidentally burn them.'),
+        el('div', { class: 'row', style: 'margin-bottom:8px' }, [
+          el('button', { disabled: s.busy, onclick: () => Actions.loadTokens() },
+            s.busy ? 'Loading…' : (fresh ? 'Reload' : 'Load tokens & ordinals')),
+        ]),
+        fresh ? renderTokensSummary(t) : null,
+      ]),
+  ]);
+}
+function renderTokensSummary(t) {
+  const ord = t.ordinals || [];
+  const tok = t.bsv20 || [];
+  if (ord.length === 0 && tok.length === 0) {
+    return el('p', { class: 'muted' }, 'No ordinals or BSV-20 tokens at this address.');
+  }
+  return el('div', {}, [
+    ord.length > 0 ? el('div', { style: 'margin-bottom:12px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+        `Ordinals (${ord.length})`),
+      ...ord.slice(0, 50).map(o => el('div', { style: 'padding:6px 0;border-bottom:1px solid var(--border)' }, [
+        el('div', {}, [
+          o.name ? el('strong', {}, o.name) : el('span', { class: 'muted' }, '(unnamed)'),
+          o.app  ? el('span', { class: 'muted' }, '  · ' + o.app) : null,
+        ]),
+        el('div', { class: 'muted', style: 'font-size:11px' },
+          [o.type || 'unknown type', o.size ? `${o.size} bytes` : null, o.num ? `#${o.num}` : null]
+            .filter(Boolean).join(' · ')),
+        el('code', { style: 'display:block;font-size:11px;margin-top:2px' }, o.outpoint),
+      ])),
+      ord.length > 50 ? el('p', { class: 'muted', style: 'font-size:11px' }, `… and ${ord.length - 50} more (not shown).`) : null,
+    ]) : null,
+    tok.length > 0 ? el('div', {}, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+        `BSV-20 tokens (${tok.length})`),
+      ...tok.map(b => el('div', { style: 'padding:6px 0;border-bottom:1px solid var(--border)' }, [
+        el('div', {}, [
+          el('strong', {}, b.sym || '(unnamed)'),
+          el('span', { class: 'muted' }, '  · ' + b.amountStr + (b.dec ? ` (raw ${b.amountRaw})` : '')),
+        ]),
+        b.id ? el('code', { style: 'display:block;font-size:11px;margin-top:2px' }, b.id) : null,
+      ])),
+    ]) : null,
+  ]);
+}
+
 function renderSendPanel(s) {
   const d = s.derived;
   const draft = s.draftTx;
@@ -909,6 +1046,8 @@ function renderSendConfirm(s, draft) {
       el('div', { class: 'muted', style: 'font-size:11px' }, 'Total input spent'),
       el('div', {}, [Fmt.sats(totalIn) + ' sats']),
     ]),
+    (draft.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
+      `🛡 ${draft.protectedCount} ordinal/token UTXO${draft.protectedCount === 1 ? '' : 's'} at this address excluded from this transaction.`) : null,
     renderHexInspector(draft.hex),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.cancelSend() }, 'Cancel'),
@@ -1000,6 +1139,8 @@ function renderRecoveryRow(s, item, sweepResult) {
         el('code', { style: 'display:block;word-break:break-all;margin-bottom:8px' }, preview.to),
         el('div', { class: 'muted', style: 'font-size:11px' },
           `${Fmt.sats(preview.sentSats)} sats · fee ${Fmt.sats(preview.fee)} sats (${preview.vsize} bytes)`),
+        (preview.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' },
+          `🛡 ${preview.protectedCount} ordinal/token UTXO${preview.protectedCount === 1 ? '' : 's'} at this address excluded from the sweep.`) : null,
         renderHexInspector(preview.hex),
         el('div', { class: 'row' }, [
           el('button', { onclick: () => Actions.cancelSweepPreview() }, 'Cancel'),
@@ -1453,8 +1594,8 @@ const Actions = {
     if (!state.wallet || !state.wallet.root) return;
     try {
       const derived = Derive.derive(state.wallet.root, state);
-      // Path change invalidates any address-scoped data (balance/history).
-      setState({ derived, balance: null, history: [] });
+      // Path change invalidates any address-scoped data (balance/history/tokens).
+      setState({ derived, balance: null, history: [], tokens: null });
       Prefs.save(state);
     } catch (e) {
       Status.error(`Derivation failed: ${e.message}`);
@@ -1504,19 +1645,28 @@ const Actions = {
 
     setState({ busy: true });
     try {
+      // Fetch protected set FIRST. If the indexer is down we block entirely
+      // (Tokens.protectedSet throws with a clear message); building anyway
+      // could burn an NFT or destroy a token at this address.
+      const protectedSet = await Tokens.protectedSet(state.derived.address);
       const raw = await Net.woc.unspent(state.derived.address);
-      const utxos = normalizeWocUtxos(raw, state.derived.address);
-      if (utxos.length === 0) throw new Error('No spendable UTXOs at this address.');
+      const allUtxos = normalizeWocUtxos(raw, state.derived.address);
+      const { spendable, protectedCount } = Tokens.filter(allUtxos, protectedSet);
+      if (spendable.length === 0) {
+        throw new Error(protectedCount > 0
+          ? `All ${protectedCount} UTXOs at this address carry ordinals or tokens (protected). Nothing safe to spend.`
+          : 'No spendable UTXOs at this address.');
+      }
       const priv = bsv.PrivateKey.fromWIF(state.derived.wif);
       const draft = TxBuilder.send({
-        utxos, toAddress: to, sats,
+        utxos: spendable, toAddress: to, sats,
         privateKey: priv, fromAddress: state.derived.address,
       });
       setState({
-        draftTx: { ...draft, to, tx: undefined /* drop tx to keep state JSON-clean */ },
+        draftTx: { ...draft, to, protectedCount, tx: undefined /* drop tx to keep state JSON-clean */ },
         busy: false,
       });
-      Status.info('Transaction built. Review and confirm to broadcast.');
+      Status.info(`Transaction built (${protectedCount} ordinal/token UTXOs protected). Review and confirm to broadcast.`);
     } catch (e) {
       setState({ busy: false });
       Status.error(`Build failed: ${e.message}`);
@@ -1568,20 +1718,30 @@ const Actions = {
     }
     return state.derived ? state.derived.address : '';
   },
-  // Pure builder (no DOM, no broadcast). Throws on bad inputs or insufficient
-  // funds; otherwise returns a sweep draft: { item, to, hex, sentSats, fee, vsize }.
-  _buildSweepDraft(item, destAddress) {
+  // Pure-ish builder (no DOM, no broadcast). Throws on bad inputs / insufficient
+  // funds / indexer down. Returns a sweep draft including protectedCount so the
+  // UI can show "swept N sats, protected M ordinal/token UTXOs".
+  async _buildSweepDraft(item, destAddress) {
     if (!destAddress) throw new Error('No destination — enter or derive an address first.');
     if (!isValidAddress(destAddress)) throw new Error('Destination is not a valid BSV address.');
     if (!item || !item.utxos || item.utxos.length === 0) throw new Error('Nothing to sweep.');
+    // Indexer-down here = hard block. Burning an ordinal would be irreversible.
+    const protectedSet = await Tokens.protectedSet(item.address);
+    const { spendable, protectedCount } = Tokens.filter(item.utxos, protectedSet);
+    if (spendable.length === 0) {
+      throw new Error(protectedCount > 0
+        ? `All ${protectedCount} UTXOs at ${item.address} carry ordinals or tokens (protected). Nothing safe to sweep.`
+        : 'Nothing to sweep.');
+    }
     const priv = bsv.PrivateKey.fromWIF(item.wif);
     const built = TxBuilder.send({
-      utxos: item.utxos, toAddress: destAddress, sats: 'max',
+      utxos: spendable, toAddress: destAddress, sats: 'max',
       privateKey: priv, fromAddress: item.address,
     });
     return {
       path: item.path, fromAddress: item.address, to: destAddress,
       hex: built.hex, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
+      protectedCount,
     };
   },
 
@@ -1613,7 +1773,7 @@ const Actions = {
     Status.clear();
     setState({ busy: true });
     try {
-      const draft = Actions._buildSweepDraft(item, Actions._recoveryDest());
+      const draft = await Actions._buildSweepDraft(item, Actions._recoveryDest());
       setState({
         busy: false,
         draft: { ...state.draft, sweepPreview: draft },
@@ -1662,7 +1822,7 @@ const Actions = {
     let ok = 0, fail = 0;
     for (const item of pending) {
       try {
-        const draft = Actions._buildSweepDraft(item, destAddress);
+        const draft = await Actions._buildSweepDraft(item, destAddress);
         const r = await Actions._broadcastSweepDraft(draft);
         if (r.ok) ok++; else fail++;
       } catch (e) {
@@ -1729,6 +1889,47 @@ const Actions = {
     } catch (e) {
       setState({ busy: false });
       Status.error(`History fetch failed: ${e.message}`);
+    }
+  },
+
+  // ---- tokens & ordinals (informational only — protection is enforced
+  // automatically in buildSend / _buildSweepDraft regardless of this load).
+  // Soft-fails: if the indexer is down here we surface an error but don't
+  // wedge the wallet. The Send/Sweep paths still hard-block when the
+  // indexer is down at spend time.
+  async loadTokens() {
+    if (!state.derived) { Status.error('No address derived.'); return; }
+    const addr = state.derived.address;
+    setState({ busy: true });
+    try {
+      const [rawTxos, rawBal] = await Promise.all([
+        Net.gorillapool.unspent(addr),
+        Net.gorillapool.bsv20Balance(addr).catch(() => []),  // bsv20 endpoint is allowed to noop
+      ]);
+      if (!Array.isArray(rawTxos)) throw new Error('Indexer returned unexpected shape.');
+      const ordinals = rawTxos.filter(Tokens.isProtected).map(Tokens.describeOrdinal);
+      // Normalize BSV-20 balance shape: array of { sym, dec, id, all: { confirmed }}
+      const bsv20 = (Array.isArray(rawBal) ? rawBal : []).map(b => {
+        const dec = Number(b.dec) || 0;
+        const rawC = (b.all && (b.all.confirmed || b.all.pending)) || '0';
+        const big = BigInt(rawC);
+        const denom = BigInt(10) ** BigInt(dec || 0);
+        const intPart = dec ? (big / denom).toString() : big.toString();
+        const fracPart = dec ? (big % denom).toString().padStart(dec, '0').replace(/0+$/, '') : '';
+        return {
+          sym: String(b.sym || ''), id: String(b.id || ''), dec,
+          amountRaw: rawC,
+          amountStr: dec && fracPart ? `${intPart}.${fracPart}` : intPart,
+        };
+      });
+      setState({ busy: false, tokens: { address: addr, ordinals, bsv20 } });
+      const parts = [];
+      if (ordinals.length) parts.push(`${ordinals.length} ordinal${ordinals.length === 1 ? '' : 's'}`);
+      if (bsv20.length)    parts.push(`${bsv20.length} BSV-20 token${bsv20.length === 1 ? '' : 's'}`);
+      Status.info(parts.length ? `Found ${parts.join(' + ')} at this address.` : 'No ordinals or BSV-20 tokens at this address.');
+    } catch (e) {
+      setState({ busy: false });
+      Status.error(`Token lookup failed: ${e.message}`);
     }
   },
 };

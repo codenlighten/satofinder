@@ -71,6 +71,14 @@
     <p>Nothing leaves your browser until you click <em>Confirm &amp; broadcast</em>.</p>
   </div>
 
+  <h2>Tokens &amp; ordinals (1Sat, BSV-20)</h2>
+  <div class="panel">
+    <p>SatoFinder queries GorillaPool's 1Sat overlay (<code>ordinals.gorillapool.io</code>) on every Send and Sweep to identify UTXOs at your address that carry an inscription (1Sat ordinal / NFT), a BSV-20 token, or a lock script. <strong>These UTXOs are automatically excluded</strong> from the spendable set — otherwise a sweep or send would burn the NFT or destroy the token by paying it as fee or change.</p>
+    <p>The Send confirm and Sweep preview panels show a small "🛡 N ordinal/token UTXOs excluded" line whenever protection is in effect.</p>
+    <p class="warn">If the indexer is unreachable when you try to build a transaction, the build is <strong>blocked</strong>. Silently spending without protection could permanently destroy your ordinals or tokens. Retry when the indexer is back, or use a different network path. (We do not offer a "spend anyway" override in this release.)</p>
+    <p>The <em>Tokens &amp; ordinals</em> panel is an informational read-only view of what's at your current derived address — useful before you change paths or sweep. Click <em>Load tokens &amp; ordinals</em> to refresh it. Sending or transferring ordinals/tokens is not supported in this release; this is a recovery-focused tool.</p>
+  </div>
+
   <h2>Recovery sweep</h2>
   <div class="panel">
     <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. Bitails serves the multi-address lookup.</p>
