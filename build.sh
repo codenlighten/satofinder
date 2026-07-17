@@ -31,7 +31,7 @@ set -euo pipefail
 # file : sdk_version : space-separated bundle basenames (without .min.js)
 TARGETS=(
   "index.html:3.4.3:bsv bsv-mnemonic bsv-message bsv-ecies"
-  "satofinder-modern.html:7.0.1:bsv"
+  "satofinder-modern.html:7.1.0:bsv"
 )
 
 NO_NETWORK=0

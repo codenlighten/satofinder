@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-g+fOZ4VEhHEI/KBzuQlrzKs4VLXhpwzqN20af5qBcpU=' https://cdn.jsdelivr.net;
+    script-src 'sha256-mW7VUANbLcssw3V7u9K3kzMS387ILM4Oe3v1cDn2YWA=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -36,21 +36,31 @@
   ">
 
   <!--
-    @smartledger/bsv@7.0.1 — pinned by SHA-384. Any upgrade requires a
+    @smartledger/bsv@7.1.0 — pinned by SHA-384. Any upgrade requires a
     deliberate hash bump (./build.sh verifies drift against the live CDN).
     Verified: CDN bytes are byte-identical to the npm-published tarball, the
     BIP39 TREZOR seed vector and the m/44'/0'/0'/0/0 `abandon…about` address
     vector both reproduce, and tx build/sign/verify round-trips.
 
-    7.0.1 is a required floor, not a preference: in <=7.0.0 Mnemonic.fromRandom
-    silently ignored the requested entropy size, so a caller asking for a
-    256-bit / 24-word seed got a 128-bit one. See Derive.newMnemonic below.
+    7.1.0 is a crypto-core security release. None of its breaking changes touch
+    this page (they are in DER strict-parsing, LTP/GDAF credential ids, and
+    SmartVerify — none of which we call), and it was diffed against 7.0.1
+    before bumping: 180 derivation comparisons across 12/24-word phrases,
+    passphrases and BIP32/BIP44 paths are identical, 20 signed transactions are
+    byte-identical, and address parsing agrees including bad-checksum
+    rejection. Re-verify that way on the next bump — a library that changed
+    derivation would show every user an empty wallet.
+
+    7.0.1 is the floor below which this page must not go: in <=7.0.0
+    Mnemonic.fromRandom silently ignored the requested entropy size, so a
+    caller asking for a 256-bit / 24-word seed got a 128-bit one. See
+    Derive.newMnemonic below.
 
     Classic script, NOT type="module": the bundle is an IIFE assigning a
     top-level `var bsv`, which only becomes a global in classic script scope.
   -->
-  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.0.1/bsv.min.js"
-          integrity="sha384-o6OMW7lvCCqEumQ74olfS9/IyBFO/10ONOye+6wsDbOtnKdHJsC/S1aTqzPowytn"
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js"
+          integrity="sha384-5x2zJTHg0miZd1NBDEb/rMQhg5z/PiuAxzUPGNFKyp79Uh/nVwWFkX8zmKYoPNUc"
           crossorigin="anonymous"></script>
 
   <style>
@@ -438,7 +448,7 @@
             <div class="actions"><button class="btn btn-primary" id="saveSettingsBtn">Save settings</button><button class="btn btn-ghost" id="resetSettingsBtn">Reset defaults</button><button class="btn btn-blue" id="testApiBtn">Test API</button></div>
             <div class="status" id="settingsStatus">Using default public endpoints.</div>
             <div class="divider"></div>
-            <p class="mini">This page is pinned: the BSV library is fixed to <b>@smartledger/bsv@7.0.1</b> by SHA-384 subresource integrity, and the inline script is pinned by a CSP SHA-256 hash. Deployments should also send <code>X-Frame-Options: DENY</code> as an HTTP header.</p>
+            <p class="mini">This page is pinned: the BSV library is fixed to <b>@smartledger/bsv@7.1.0</b> by SHA-384 subresource integrity, and the inline script is pinned by a CSP SHA-256 hash. Deployments should also send <code>X-Frame-Options: DENY</code> as an HTTP header.</p>
           </div></div>
         </div>
       </section>
@@ -740,8 +750,8 @@
     // Mnemonic.fromRandom(entropyBits) — in @smartledger/bsv <=7.0.0 the
     // entropy size was silently ignored unless passed in this exact single-arg
     // form, so a request for a 256-bit / 24-word seed quietly produced a
-    // 128-bit / 12-word one. Fixed in 7.0.1, which is why the SRI above pins
-    // that floor.
+    // 128-bit / 12-word one. Fixed in 7.0.1, so the SRI above must never be
+    // rolled back below that.
     //
     // The word-count assertion stays regardless: it is the check that would
     // have caught that bug here, and it costs one split(). A user who asks for

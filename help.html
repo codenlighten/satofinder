@@ -29,7 +29,7 @@
     <p>SatoFinder ships two front-ends over the same wallet rules. Both derive identical addresses from the same mnemonic, and both apply the same ordinal/token protection described below. Pick whichever suits you:</p>
     <ul>
       <li><strong><a href="index.html">Classic</a></strong> (<code>index.html</code>) — the default. Password-locked vault, auto-lock, per-address sweep previews. Pins <code>@smartledger/bsv@3.4.3</code>.</li>
-      <li><strong><a href="satofinder-modern.html">Alternate UI</a></strong> (<code>satofinder-modern.html</code>) — a panelled dashboard layout. No vault or auto-lock; one consolidated recovery transaction instead of per-address sweeps. Pins <code>@smartledger/bsv@7.0.1</code>.</li>
+      <li><strong><a href="satofinder-modern.html">Alternate UI</a></strong> (<code>satofinder-modern.html</code>) — a panelled dashboard layout. No vault or auto-lock; one consolidated recovery transaction instead of per-address sweeps. Pins <code>@smartledger/bsv@7.1.0</code>.</li>
     </ul>
     <p>They are <strong>not</strong> the same security model, and the differences are not cosmetic — see <a href="#alternate">Alternate UI</a> before you use it with real funds.</p>
   </div>
@@ -39,7 +39,7 @@
     <ul>
       <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (310,000 iter) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
       <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
-      <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@3.4.3</code> in Classic, <code>@smartledger/bsv@7.0.1</code> in the Alternate UI. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
+      <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@3.4.3</code> in Classic, <code>@smartledger/bsv@7.1.0</code> in the Alternate UI. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
       <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to a fixed allowlist (<code>api.whatsonchain.com</code>, <code>api.bitails.io</code> and <code>ordinals.gorillapool.io</code> in Classic; <code>api.whatsonchain.com</code> and <code>ordinals.gorillapool.io</code> in the Alternate UI).</li>
       <li>The wallet auto-locks after 10 minutes of inactivity, and immediately when the tab is hidden. Private key / mnemonic are cleared from memory. <span class="warn">Classic only — the Alternate UI does not auto-lock.</span></li>
       <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
