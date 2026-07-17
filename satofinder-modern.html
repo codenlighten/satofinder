@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-mW7VUANbLcssw3V7u9K3kzMS387ILM4Oe3v1cDn2YWA=' https://cdn.jsdelivr.net;
+    script-src 'sha256-ehbmTZCH+wz5H7xIZUvKa0p9dADHcVnGQQUcy3oPxBM=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -203,6 +203,14 @@
     .status.error { border-color: rgba(251,113,133,.34); background: rgba(251,113,133,.08); color: #ffd0d8; }
     .status.warn { border-color: rgba(251,146,60,.34); background: rgba(251,146,60,.08); color: #ffe0c1; }
 
+    .lockbar {
+      margin-bottom: 18px; padding: 15px 16px; border-radius: 15px;
+      border: 1px solid rgba(242,183,5,.34); background: rgba(242,183,5,.07); color: #ffe9b0;
+    }
+    .lockbar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+    .lockbar p { margin: 6px 0 0; }
+    .lockbar .grid-2 { margin-top: 12px; }
+
     .shield {
       display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 11px 13px;
       border: 1px solid rgba(69,163,255,.3); background: rgba(69,163,255,.08);
@@ -301,6 +309,17 @@
             <div class="card-body">
               <div class="section-title"><div><h3>Wallet &amp; derivation</h3><p>Create a new phrase or import an existing wallet, then select the exact address path.</p></div></div>
 
+              <div class="lockbar" id="lockBar" hidden>
+                <div class="lockbar-head"><strong>🔒 Wallet locked</strong><span id="lockReason" class="mini"></span></div>
+                <p id="lockText" class="mini"></p>
+                <div class="grid-2" id="lockUnlockWrap" hidden>
+                  <div class="field"><label for="lockPassword">Backup password</label><input id="lockPassword" type="password" autocomplete="current-password" placeholder="Password for this browser's backup"></div>
+                  <div class="field" style="align-self:end"><button class="btn btn-primary" id="lockUnlockBtn">Unlock</button></div>
+                </div>
+              </div>
+
+              <div class="status warn" id="noBackupWarning" hidden></div>
+
               <div class="grid-2">
                 <div class="field">
                   <label for="walletPreset">Wallet preset</label>
@@ -366,7 +385,7 @@
                 <div class="key-row"><div class="key-row-head"><small>Public key</small><button class="copy" data-copy="publicKey">Copy</button></div><div class="key-value" id="publicKeyValue"></div></div>
                 <div class="key-row"><div class="key-row-head"><small>Address</small><button class="copy" data-copy="address">Copy</button></div><div class="key-value" id="addressValue"></div></div>
                 <div class="key-row"><div class="key-row-head"><small>Address fingerprint (SHA-256 of address + path)</small><button class="copy" data-copy="fingerprint">Copy</button></div><div class="key-value" id="fingerprintValue"></div></div>
-                <div class="actions"><button class="btn btn-danger" id="revealSecretsBtn">Reveal secrets</button><button class="btn btn-blue" id="nextAddressBtn">Next receive address</button><button class="btn btn-ghost" id="nextChangeBtn">Next change address</button></div>
+                <div class="actions"><button class="btn btn-danger" id="revealSecretsBtn">Reveal secrets</button><button class="btn btn-blue" id="nextAddressBtn">Next receive address</button><button class="btn btn-ghost" id="nextChangeBtn">Next change address</button><button class="btn btn-ghost" id="lockNowBtn">Lock now</button></div>
               </div>
               <div class="status" id="walletStatus">No wallet is loaded.</div>
             </div>
@@ -488,6 +507,19 @@
   const RETRY_ATTEMPTS = 4;
 
   const ENTROPY_TO_WORDS = { 128: 12, 160: 15, 192: 18, 224: 21, 256: 24 };
+
+  // Auto-lock. LOCK_IDLE_MS matches Classic's AUTOLOCK_MS.
+  //
+  // LOCK_HIDDEN_GRACE_MS is a deliberate divergence from Classic, which locks
+  // the instant the tab is hidden. Classic can afford that: it always has a
+  // vault, so unlocking costs a password. Here a lock with no saved backup
+  // costs the user retyping 24 words — and this page's own explorer links open
+  // with target="_blank", which hides the tab. Locking instantly would destroy
+  // the wallet when someone clicks "Inspect on WhatsOnChain" to review the very
+  // transaction they are about to broadcast. A backgrounded tab still locks;
+  // it just survives a glance at an explorer.
+  const LOCK_IDLE_MS = 10 * 60 * 1000;
+  const LOCK_HIDDEN_GRACE_MS = 60 * 1000;
 
   const DEFAULT_SETTINGS = {
     apiBase: 'https://api.whatsonchain.com/v1/bsv/main',
@@ -1054,6 +1086,9 @@
     setStatus('tokensStatus', 'No token lookup has run for this address.');
 
     hideSecrets();
+    Lock.release();
+    Lock.armIdle();
+    syncNoBackupWarning();
     const note = wallet.passphrase ? ' A BIP39 passphrase is applied.' : '';
     setStatus('walletStatus', `Wallet derived at ${wallet.path}.${note} Secrets are hidden.`, 'success');
     await refreshBalance();
@@ -1072,7 +1107,10 @@
     $('revealSecretsBtn').textContent = 'Reveal secrets';
   }
 
-  function clearWallet() {
+  // Removes every trace of the wallet from state and from the DOM. Shared by
+  // Clear wallet and by auto-lock — a lock that left the mnemonic sitting in a
+  // hidden input would be decoration.
+  function wipeWallet() {
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
       builtTx: null, recoveryTx: null, recoveryUtxos: [],
@@ -1086,12 +1124,85 @@
     $('buildRecoveryBtn').disabled = true;
     $('broadcastRecoveryBtn').disabled = true;
     for (const id of ['utxoResults', 'historyResults', 'tokenResults']) $(id).replaceChildren();
-    setStatus('walletStatus', 'Wallet cleared from this page session.');
+    hideSecrets();
     setStatus('sendStatus', 'No transaction built.');
     setStatus('recoveryStatus', 'No recovery scan has run.');
     setStatus('tokensStatus', 'No token lookup has run.');
+    syncNoBackupWarning();
     updateBalanceUi();
   }
+
+  function clearWallet() {
+    Lock.release();
+    wipeWallet();
+    setStatus('walletStatus', 'Wallet cleared from this page session.');
+  }
+
+  const hasVault = () => !!localStorage.getItem(LS_VAULT);
+
+  // Standing warning while a wallet is loaded with no encrypted backup: if it
+  // locks, the phrase is the only way back. Better to say so before the timer
+  // fires than to explain it afterwards.
+  function syncNoBackupWarning() {
+    const show = !!state.wallet && !hasVault();
+    $('noBackupWarning').hidden = !show;
+    if (show) {
+      $('noBackupWarning').textContent =
+        `No encrypted backup is saved in this browser. This wallet locks after ${LOCK_IDLE_MS / 60000} minutes of inactivity, and locking wipes it — you would need to re-import your phrase. Save a backup on the Backup panel to unlock with a password instead.`;
+    }
+  }
+
+  // ===========================================================================
+  // 08b. Auto-lock
+  // ===========================================================================
+
+  const Lock = {
+    engaged: false,
+    _idle: null,
+    _hidden: null,
+
+    armIdle() {
+      Lock._clear('_idle');
+      if (!state.wallet || Lock.engaged) return;
+      Lock._idle = setTimeout(() => Lock.engage(`${LOCK_IDLE_MS / 60000} minutes of inactivity`), LOCK_IDLE_MS);
+    },
+
+    _clear(key) { if (Lock[key]) { clearTimeout(Lock[key]); Lock[key] = null; } },
+
+    bump() { if (state.wallet && !Lock.engaged) Lock.armIdle(); },
+
+    onHidden() {
+      if (!state.wallet || Lock.engaged) return;
+      Lock._clear('_hidden');
+      Lock._hidden = setTimeout(() => Lock.engage('the tab was left in the background'), LOCK_HIDDEN_GRACE_MS);
+    },
+
+    onVisible() { Lock._clear('_hidden'); Lock.bump(); },
+
+    // Wipes first, then explains. Nothing here can throw between the two.
+    engage(reason) {
+      if (!state.wallet || Lock.engaged) return;
+      const vaulted = hasVault();
+      Lock._clear('_idle');
+      Lock._clear('_hidden');
+      wipeWallet();
+      Lock.engaged = true;
+      $('lockBar').hidden = false;
+      $('lockReason').textContent = `Locked after ${reason}.`;
+      $('lockUnlockWrap').hidden = !vaulted;
+      $('lockText').textContent = vaulted
+        ? 'Your keys were cleared from this page. Enter your backup password to restore the encrypted wallet saved in this browser.'
+        : 'Your keys were cleared from this page. No encrypted backup is saved here, so re-import your mnemonic phrase below to continue.';
+      setStatus('walletStatus', 'Wallet locked. Keys have been cleared from memory.', 'warn');
+    },
+
+    release() {
+      Lock.engaged = false;
+      Lock._clear('_hidden');
+      $('lockBar').hidden = true;
+      $('lockPassword').value = '';
+    },
+  };
 
   async function refreshBalance() {
     if (!state.wallet) { updateBalanceUi(); return; }
@@ -1377,7 +1488,8 @@
   action('saveEncryptedBtn', 'backupStatus', async () => {
     const password = requireBackupPassword();
     localStorage.setItem(LS_VAULT, JSON.stringify(await encryptVault(password)));
-    setStatus('backupStatus', 'Encrypted wallet backup saved in this browser.', 'success');
+    syncNoBackupWarning();
+    setStatus('backupStatus', 'Encrypted wallet backup saved in this browser. Auto-lock can now be undone with this password.', 'success');
   });
 
   action('downloadEncryptedBtn', 'backupStatus', async () => {
@@ -1433,6 +1545,7 @@
   action('deleteLocalBtn', 'backupStatus', async () => {
     if (!(await confirmAction('Delete browser backup?', 'This permanently removes the encrypted SatoFinder backup from this browser profile. If you have not written your phrase down, the funds are gone.'))) return;
     localStorage.removeItem(LS_VAULT);
+    syncNoBackupWarning();
     setStatus('backupStatus', 'Encrypted browser backup deleted.', 'warn');
   });
 
@@ -1475,6 +1588,25 @@
   // ===========================================================================
   // 10. Boot
   // ===========================================================================
+
+  // Any interaction is proof the user is still here; reset the idle timer.
+  // Passive: these fire constantly and must never block scrolling.
+  for (const ev of ['mousemove', 'keydown', 'touchstart', 'focus', 'click', 'scroll']) {
+    window.addEventListener(ev, () => Lock.bump(), { passive: true });
+  }
+  document.addEventListener('visibilitychange', () =>
+    document.visibilityState === 'hidden' ? Lock.onHidden() : Lock.onVisible());
+
+  action('lockNowBtn', 'walletStatus', async () => Lock.engage('you locked it'));
+
+  action('lockUnlockBtn', 'walletStatus', async () => {
+    const raw = localStorage.getItem(LS_VAULT);
+    if (!raw) throw new Error('No encrypted backup exists in this browser.');
+    const password = $('lockPassword').value;
+    if (!password) throw new Error('Enter your backup password.');
+    await restore(JSON.parse(raw), password);   // setWallet() releases the lock
+    setStatus('walletStatus', 'Unlocked. Wallet restored from the encrypted browser backup.', 'success');
+  });
 
   window.addEventListener('error', (e) => console.error(e.error || e.message));
   window.addEventListener('unhandledrejection', (e) => console.error(e.reason));
