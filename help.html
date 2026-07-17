@@ -28,7 +28,7 @@
   <div class="panel">
     <p>SatoFinder ships two front-ends over the same wallet rules. Both derive identical addresses from the same mnemonic, and both apply the same ordinal/token protection described below. Pick whichever suits you:</p>
     <ul>
-      <li><strong><a href="index.html">Classic</a></strong> (<code>index.html</code>) — the default. Password-locked vault, auto-lock, per-address sweep previews. Pins <code>@smartledger/bsv@3.4.3</code>.</li>
+      <li><strong><a href="index.html">Classic</a></strong> (<code>index.html</code>) — the default. Password-locked vault, auto-lock, per-address sweep previews. Pins <code>@smartledger/bsv@7.1.0</code>.</li>
       <li><strong><a href="satofinder-modern.html">Alternate UI</a></strong> (<code>satofinder-modern.html</code>) — a panelled dashboard layout. Auto-locks like Classic, but has no password vault; one consolidated recovery transaction instead of per-address sweeps. Pins <code>@smartledger/bsv@7.1.0</code>.</li>
     </ul>
     <p>They are <strong>not</strong> the same security model, and the differences are not cosmetic — see <a href="#alternate">Alternate UI</a> before you use it with real funds.</p>
@@ -39,7 +39,7 @@
     <ul>
       <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (310,000 iter) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
       <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
-      <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@3.4.3</code> in Classic, <code>@smartledger/bsv@7.1.0</code> in the Alternate UI. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
+      <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@7.1.0</code> on both pages. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
       <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to a fixed allowlist (<code>api.whatsonchain.com</code>, <code>api.bitails.io</code> and <code>ordinals.gorillapool.io</code> in Classic; <code>api.whatsonchain.com</code> and <code>ordinals.gorillapool.io</code> in the Alternate UI).</li>
       <li>The wallet auto-locks after 10 minutes of inactivity, and when the tab is hidden. Private key / mnemonic are cleared from memory. Classic locks the instant the tab is hidden; the Alternate UI waits 60 seconds first (see <a href="#alternate">Alternate UI</a>).</li>
       <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
@@ -129,6 +129,15 @@
       <li><strong>Settings panel.</strong> The API base, explorer base and fee rate (satoshis/KB, default 100, shared by Send and Recovery) are editable and persist in <code>localStorage</code>. Both URLs must be HTTPS, and the API base must be on the CSP <code>connect-src</code> allowlist above — point it elsewhere and the browser blocks the request.</li>
     </ul>
     <p>Both pages link to each other in the footer, and both are covered by <code>./build.sh</code>, which re-pins each page's inline-script CSP hash and verifies its SRI hashes against the live CDN.</p>
+  </div>
+
+  <h2>Offline use &amp; caching</h2>
+  <div class="panel">
+    <p>SatoFinder no longer installs a service worker, and does not cache itself. Every visit loads the current code.</p>
+    <p>Earlier versions did cache the app and served it <em>cache-first</em>, refreshing only when the worker file itself changed. That file went untouched from v2.0.0 through v2.4.0, so anyone who had visited before kept running the v2.0.0 app — and never received the BIP39 passphrase support, the 24-word entropy fix, or the ordinal/token spend protection that stops a Send from burning an NFT. It failed silently; there was nothing to notice.</p>
+    <p>It also bought nothing. This wallet needs the network for balances, UTXOs, history and broadcast, and a Send is <strong>blocked</strong> unless the ordinal indexer can confirm your UTXOs are safe to spend — so an offline SatoFinder can derive an address and little else. The bundle's integrity comes from SHA-384 SRI, not from the cache.</p>
+    <p><strong>If you used SatoFinder before v2.5.0:</strong> your browser will pick up a replacement worker that clears the old caches, unregisters itself, and reloads the page onto the live version. If you want to force it now, hard-reload (<code>Ctrl/Cmd+Shift+R</code>) or clear site data for this origin.</p>
+    <p><strong>Want it offline anyway?</strong> Save the page. It is a single self-contained file — open the saved copy on an air-gapped machine to derive keys.</p>
   </div>
 
   <h2>Disclaimer</h2>

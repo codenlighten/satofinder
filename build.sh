@@ -30,7 +30,7 @@ set -euo pipefail
 
 # file : sdk_version : space-separated bundle basenames (without .min.js)
 TARGETS=(
-  "index.html:3.4.3:bsv bsv-mnemonic bsv-message bsv-ecies"
+  "index.html:7.1.0:bsv"
   "satofinder-modern.html:7.1.0:bsv"
 )
 
@@ -38,6 +38,32 @@ NO_NETWORK=0
 [[ "${1:-}" == "--no-network" ]] && NO_NETWORK=1
 
 drift_found=0
+
+# --- 0. Service worker must stay a tombstone --------------------------------
+# There is deliberately no service worker (see the comment in service-worker.js).
+# The old one served the app cache-first and only refreshed when its own bytes
+# changed, which silently pinned returning users to v2.0.0 across four releases
+# — withholding the ordinal-burn protection from exactly the people who already
+# had a wallet. It bought nothing: this wallet needs the network for every
+# useful action, and SRI already guarantees the bundle bytes.
+#
+# Reinstating a cache is a decision to make deliberately, not something to
+# rediscover in a year. Fail the build if caching or a registration reappears.
+if [[ -f service-worker.js ]]; then
+  if grep -qE 'caches\.open|cache\.addAll|cache\.put|addEventListener\(.fetch.' service-worker.js; then
+    echo "build.sh: FAIL — service-worker.js caches or intercepts fetches again." >&2
+    echo "         It is meant to be a tombstone. Cache-first serving of this app is what" >&2
+    echo "         pinned users to v2.0.0 for four releases; read the comment in that file" >&2
+    echo "         before removing this check." >&2
+    exit 1
+  fi
+  if grep -q "serviceWorker.register" index.html satofinder-modern.html 2>/dev/null; then
+    echo "build.sh: FAIL — a page registers a service worker again; see service-worker.js." >&2
+    exit 1
+  fi
+  echo "service worker: tombstone only, no caching, no page registers it"
+  echo
+fi
 
 for target in "${TARGETS[@]}"; do
   IFS=':' read -r file sdk_version bundles <<< "$target"

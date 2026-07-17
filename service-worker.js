@@ -1,76 +1,62 @@
-// SatoFinder service worker — cache-first, version-pinned.
+// SatoFinder service worker — TOMBSTONE. Deliberately does nothing but delete
+// its own caches and unregister itself.
 // By SmartLedger Technology (https://smartledger.technology).
 //
-// Pre-caches the single-file app + the four SRI-pinned @smartledger/bsv@3.4.3
-// CDN bundles, so the wallet works offline AND the exact pinned bundle bytes
-// are frozen in the user's browser. SRI on the <script> tags still validates
-// every served byte regardless of where the response came from (CDN or cache).
+// WHY THERE IS NO SERVICE WORKER ANY MORE
 //
-// Bump CACHE on every release — old caches are evicted in `activate`.
-const CACHE = 'satofinder-v2.0.0';
+// The old worker pre-cached the app and served it cache-first, and it only
+// re-installed (and so only re-fetched the app) when THIS FILE's bytes changed.
+// It was never bumped between v2.0.0 and v2.4.0, so every returning visitor
+// kept running the v2.0.0 app: no BIP39 passphrase support, no 24-word entropy
+// fix, and no ordinal/token spend protection — the last of which is the thing
+// that stops a Send from burning an NFT. Four releases reached new visitors
+// only. There was no error and nothing to notice; the app just quietly stayed
+// old for the people who already had a wallet in it.
+//
+// That risk bought nothing. SatoFinder cannot do useful work offline — balance,
+// UTXOs, history and broadcast all need the network, and a Send hard-blocks
+// unless the ordinal indexer can confirm the UTXOs are safe to spend, so an
+// offline SatoFinder can derive an address and nothing else. Nor did the cache
+// protect the bundle: the SHA-384 SRI on the <script> tag validates those bytes
+// wherever they came from. And a wallet is precisely the kind of app that must
+// never be pinned to old code — a fix has to reach the people already using it,
+// which is the one thing cache-first prevents.
+//
+// Want it offline? Save the page. It is a single self-contained file.
+//
+// This file STAYS rather than being deleted: deleting it would leave workers
+// that are already registered alive, with their caches intact. Browsers
+// re-check this URL for existing registrations, and the stale cached
+// index.html calls register() itself — both paths pull in this tombstone,
+// which then evicts every cache and unregisters. It can be dropped once
+// traffic from pre-2.5.0 clients has died off.
+//
+// nginx serves this path with `Cache-Control: no-cache, must-revalidate`,
+// which is what lets the tombstone reach those clients at all — keep that.
 
-const CORE = [
-  './',
-  './index.html',
-  './manifest.json',
-  './logo2.png',
-];
-
-const CDN = [
-  'https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv.min.js',
-  'https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-mnemonic.min.js',
-  'https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-message.min.js',
-  'https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-ecies.min.js',
-];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(CACHE);
-    // Core: must succeed. CDN: best-effort (offline install still OK).
-    await cache.addAll(CORE);
-    await Promise.allSettled(CDN.map(url =>
-      fetch(url, { mode: 'cors', credentials: 'omit' })
-        .then(r => r.ok && cache.put(url, r.clone()))
-    ));
-    self.skipWaiting();
-  })());
+self.addEventListener('install', () => {
+  // Take over immediately instead of waiting for every tab to close.
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    // 1. Evict everything the old worker cached, including the stale app HTML.
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
-    self.clients.claim();
-  })());
-});
+    await Promise.all(keys.map(k => caches.delete(k)));
 
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
+    // 2. Unregister, so nothing intercepts fetches from here on.
+    await self.registration.unregister();
 
-  // Never intercept API calls — wallet must always see live network errors.
-  if (url.hostname === 'api.whatsonchain.com' || url.hostname === 'api.bitails.io') return;
-
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const cached = await cache.match(req, { ignoreSearch: false });
-    if (cached) return cached;
-    try {
-      const fresh = await fetch(req);
-      // Cache GETs from same origin + the pinned CDN bundles only.
-      const isCdnBundle = CDN.includes(url.href);
-      if ((url.origin === self.location.origin || isCdnBundle) && fresh.ok) {
-        cache.put(req, fresh.clone());
-      }
-      return fresh;
-    } catch (e) {
-      // Offline + no cache → return a minimal HTML for navigations.
-      if (req.mode === 'navigate') {
-        return new Response('<h1>Offline</h1><p>SatoFinder is offline and not cached.</p>',
-          { headers: { 'Content-Type': 'text/html' } });
-      }
-      throw e;
+    // 3. Reload any open tab. Those tabs are by definition running HTML that
+    //    came from the cache just deleted — possibly the v2.0.0 app. After the
+    //    reload they get the live page from the network, and that page does not
+    //    register a worker, so this cannot loop.
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const client of clients) {
+      if ('navigate' in client) client.navigate(client.url).catch(() => {});
     }
   })());
 });
+
+// No fetch handler, on purpose. Every request goes straight to the network.

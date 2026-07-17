@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-lFpu0/x41OxuYwopoOKPoXi72c5Y+GeEbVpsQRDSar0=' https://cdn.jsdelivr.net;
+    script-src 'sha256-4F8DOEmPPZoPzMxrl20FIMCOzTPipOuVj/QcXr0M70k=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -36,19 +36,29 @@
     upgrade-insecure-requests;
   ">
 
-  <!-- @smartledger/bsv@3.4.3 — pinned by SHA-384. Any upgrade requires a
-       deliberate hash bump (see build.sh --no-network for verification). -->
-  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv.min.js"
-          integrity="sha384-fK4kLzP+qryi0rDQXggLpdNyDV+Ah7ir42H+VzIbHU1x5qjkeCTNBWBhK3rulf6V"
-          crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-mnemonic.min.js"
-          integrity="sha384-GQMXpY1DeHWMInXP4NyXAgErHJu0sOXpjr8QuzHCpPKp2aAi8Drk/VflXBhey4s3"
-          crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-message.min.js"
-          integrity="sha384-0Acsl74Yh+7IB+WItm8erLKmjWVzKLNgHqIxNZuO9KX/0DKhf162MbRKFoKSvrW5"
-          crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@3.4.3/bsv-ecies.min.js"
-          integrity="sha384-sPMPdSONnMFZjjhH32M/304wND8yEUI6ABWr6Unwf7wMEqFDisC1icQIaX4+HVHa"
+  <!--
+    @smartledger/bsv@7.1.0 — pinned by SHA-384. Any upgrade requires a
+    deliberate hash bump (./build.sh verifies drift against the live CDN).
+
+    ONE bundle, was four. This page only ever used Mnemonic, HDPrivateKey,
+    PrivateKey/PublicKey, Address, Script and Transaction — all present in the
+    core bundle at 7.x. bsv-message and bsv-ecies were never referenced by a
+    single line of code, and each aux bundle re-embeds the whole core, so the
+    old four-tag setup shipped ~2.6MB to use ~1.3MB of it.
+
+    Upgraded from 3.4.3, which crosses four majors and swaps the crypto core
+    from `elliptic` to the audited @noble/{curves,hashes,ciphers}. Verified by
+    running BOTH published browser bundles side by side and diffing behaviour
+    on this page's entire API surface: 180 derivation cases x 3 fields (540
+    comparisons) across 12/24-word phrases, four passphrases (incl. unicode)
+    and every shipped preset path are IDENTICAL; 25 signed transactions and a
+    3-input multi-key sweep are BYTE-IDENTICAL; address parsing, P2PKH script
+    building, WIF round-trips and Mnemonic.isValid all agree, including on
+    rejections. Re-do that diff on the next bump: a library that quietly
+    changed derivation would show every existing user an empty wallet.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js"
+          integrity="sha384-5x2zJTHg0miZd1NBDEb/rMQhg5z/PiuAxzUPGNFKyp79Uh/nVwWFkX8zmKYoPNUc"
           crossorigin="anonymous"></script>
 
   <!-- ====================== 01. STYLE ====================== -->
@@ -117,7 +127,7 @@
 'use strict';
 
 // ====================== 03. CONSTANTS ======================
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 
 const ENDPOINTS = Object.freeze({
   woc: {
@@ -2034,7 +2044,7 @@ function boot() {
     return;
   }
   if (typeof bsv.Mnemonic !== 'function') {
-    Status.error('bsv.Mnemonic missing — bsv-mnemonic.min.js failed SRI or to load.');
+    Status.error('bsv.Mnemonic missing — the bsv bundle failed SRI or did not load.');
   }
   subscribe(renderApp);
   subscribe(renderStatusBar);
@@ -2057,13 +2067,13 @@ function boot() {
   wireGlobalEvents();
   // Fetch BSV price once at boot; non-fatal if it fails.
   Actions.fetchPrice();
-  // Register service worker for offline + version-pinned CDN cache.
-  // Skipped on file:// and any context where SW isn't available.
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./service-worker.js').then(
-      reg => console.info('SW registered, scope', reg.scope),
-      err => console.warn('SW registration failed', err.message));
-  }
+  // No service worker is registered. The old one served the app cache-first and
+  // only refreshed when its own file changed, which pinned returning users to
+  // v2.0.0 across four releases — including the release that stops a Send from
+  // burning an ordinal. It bought nothing in return: this wallet needs the
+  // network for every useful action, and SRI already guarantees the bundle's
+  // bytes. ./service-worker.js is now a tombstone that unregisters any worker a
+  // previous visit installed; see the long comment there before reinstating one.
   console.info(`SatoFinder ${VERSION} booted`);
 }
 
