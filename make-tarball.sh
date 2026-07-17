@@ -47,6 +47,7 @@ NO_NET=0
 ARTIFACTS=(
   # Runtime / static deploy
   index.html
+  satofinder-modern.html
   service-worker.js
   manifest.json
   help.html

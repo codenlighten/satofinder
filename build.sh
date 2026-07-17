@@ -14,9 +14,9 @@
 #      which is the whole point of SRI.
 #
 # Targets are declared in TARGETS below as "file:sdk_version:bundle bundle ...".
-# The two pages intentionally pin DIFFERENT SDK versions: index.html is the
-# stable production page, satofinder-modern.html is the alternate UI on a newer
-# SDK. Each is verified against its own version.
+# Each page is verified against its own pinned version — they are allowed to
+# differ (they did while the alternate led the upgrade), so nothing here assumes
+# they match.
 #
 # Idempotent: source file == output file. Re-run after every edit to an inline
 # script block.
@@ -38,6 +38,27 @@ NO_NETWORK=0
 [[ "${1:-}" == "--no-network" ]] && NO_NETWORK=1
 
 drift_found=0
+
+# --- 0a. Every locally-linked page must be in the deploy manifest ------------
+# make-tarball.sh ships an explicit allowlist, so a new page is invisible to the
+# deploy until it is added there. index.html linking to a page that was never
+# packaged is a 404 in production and green everywhere else — which is exactly
+# what happened when satofinder-modern.html was added.
+if [[ -f make-tarball.sh ]]; then
+  missing_art=0
+  for page in $(grep -ohE 'href="[a-zA-Z0-9_.-]+\.html"' index.html satofinder-modern.html 2>/dev/null \
+                | sed -E 's/href="([^"]+)"/\1/' | sort -u); do
+    [[ -f "$page" ]] || continue
+    if ! grep -qE "^[[:space:]]*${page}\$" make-tarball.sh; then
+      echo "build.sh: FAIL — $page is linked but is not in make-tarball.sh ARTIFACTS." >&2
+      echo "         It would 404 in production. Add it to the allowlist." >&2
+      missing_art=1
+    fi
+  done
+  [[ "$missing_art" -eq 0 ]] || exit 1
+  echo "deploy manifest: every linked page is packaged"
+  echo
+fi
 
 # --- 0. Service worker must stay a tombstone --------------------------------
 # There is deliberately no service worker (see the comment in service-worker.js).

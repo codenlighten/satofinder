@@ -12,6 +12,9 @@ node_modules
 # Dev tooling not needed at build time
 spike.html
 
+# Historical artifacts — never deployed (see archive/README.md)
+archive
+
 # Logs / scratch
 *.log
 *.tar.gz
