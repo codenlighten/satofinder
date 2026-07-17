@@ -24,14 +24,24 @@
   <h1>SatoFinder Help</h1>
   <p class="muted">A single-file, fully client-side BSV wallet by <a href="https://smartledger.technology" target="_blank" rel="noopener noreferrer">SmartLedger Technology</a>. Everything runs in your browser; no server sees your keys.</p>
 
+  <h2>Two interfaces</h2>
+  <div class="panel">
+    <p>SatoFinder ships two front-ends over the same wallet rules. Both derive identical addresses from the same mnemonic, and both apply the same ordinal/token protection described below. Pick whichever suits you:</p>
+    <ul>
+      <li><strong><a href="index.html">Classic</a></strong> (<code>index.html</code>) — the default. Password-locked vault, auto-lock, per-address sweep previews. Pins <code>@smartledger/bsv@3.4.3</code>.</li>
+      <li><strong><a href="satofinder-modern.html">Alternate UI</a></strong> (<code>satofinder-modern.html</code>) — a panelled dashboard layout. No vault or auto-lock; one consolidated recovery transaction instead of per-address sweeps. Pins <code>@smartledger/bsv@7.0.1</code>.</li>
+    </ul>
+    <p>They are <strong>not</strong> the same security model, and the differences are not cosmetic — see <a href="#alternate">Alternate UI</a> before you use it with real funds.</p>
+  </div>
+
   <h2>Security model</h2>
   <div class="panel">
     <ul>
       <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (310,000 iter) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
       <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
-      <li>The app loads <code>@smartledger/bsv@3.4.3</code> from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong>. A compromised CDN cannot ship modified code.</li>
-      <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to <code>api.whatsonchain.com</code> and <code>api.bitails.io</code>.</li>
-      <li>The wallet auto-locks after 10 minutes of inactivity, and immediately when the tab is hidden. Private key / mnemonic are cleared from memory.</li>
+      <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@3.4.3</code> in Classic, <code>@smartledger/bsv@7.0.1</code> in the Alternate UI. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
+      <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to a fixed allowlist (<code>api.whatsonchain.com</code>, <code>api.bitails.io</code> and <code>ordinals.gorillapool.io</code> in Classic; <code>api.whatsonchain.com</code> and <code>ordinals.gorillapool.io</code> in the Alternate UI).</li>
+      <li>The wallet auto-locks after 10 minutes of inactivity, and immediately when the tab is hidden. Private key / mnemonic are cleared from memory. <span class="warn">Classic only — the Alternate UI does not auto-lock.</span></li>
       <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
     </ul>
   </div>
@@ -74,7 +84,7 @@
   <h2>Tokens &amp; ordinals (1Sat, BSV-20)</h2>
   <div class="panel">
     <p>SatoFinder queries GorillaPool's 1Sat overlay (<code>ordinals.gorillapool.io</code>) on every Send and Sweep to identify UTXOs at your address that carry an inscription (1Sat ordinal / NFT), a BSV-20 token, or a lock script. <strong>These UTXOs are automatically excluded</strong> from the spendable set — otherwise a sweep or send would burn the NFT or destroy the token by paying it as fee or change.</p>
-    <p>The Send confirm and Sweep preview panels show a small "🛡 N ordinal/token UTXOs excluded" line whenever protection is in effect.</p>
+    <p>The Send confirm and Sweep preview panels show a small "🛡 N ordinal/token UTXOs excluded" line whenever protection is in effect. The Alternate UI shows the same line on its Send and Recovery panels.</p>
     <p class="warn">If the indexer is unreachable when you try to build a transaction, the build is <strong>blocked</strong>. Silently spending without protection could permanently destroy your ordinals or tokens. Retry when the indexer is back, or use a different network path. (We do not offer a "spend anyway" override in this release.)</p>
     <p>The <em>Tokens &amp; ordinals</em> panel is an informational read-only view of what's at your current derived address — useful before you change paths or sweep. Click <em>Load tokens &amp; ordinals</em> to refresh it. Sending or transferring ordinals/tokens is not supported in this release; this is a recovery-focused tool.</p>
   </div>
@@ -95,6 +105,27 @@
   <h2>Export &amp; backup</h2>
   <div class="panel">
     <p>The <em>Export mnemonic</em> panel re-asks for your password before revealing the mnemonic (so a casual onlooker can't read it). You can also download an encrypted backup file (<code>satofinder-vault-…json</code>) — useless without your password, safe to email or archive.</p>
+  </div>
+
+  <h2 id="alternate">Alternate UI</h2>
+  <div class="panel">
+    <p>The <a href="satofinder-modern.html">Alternate UI</a> (<code>satofinder-modern.html</code>) is a second front-end with a panelled dashboard layout — sidebar navigation, live balance, and separate Wallet / Send / Recover / Tokens / History / Backup / Settings panels. It is <strong>not</strong> a relaxed or "lite" build: it enforces the same ordinal/token protection, the same hard-block when the indexer is unreachable, the same CSP inline-script hash pinning, and the same SHA-384 SRI pinning as Classic.</p>
+    <p>What is the same:</p>
+    <ul>
+      <li><strong>Derivation.</strong> Identical BIP32/BIP44 paths, identical wallet presets, identical addresses from the same mnemonic.</li>
+      <li><strong>BIP39 passphrase.</strong> Same "25th word" behaviour described above, on the Wallet panel.</li>
+      <li><strong>12/24-word generation.</strong> Choose the length under <em>New phrase length</em>. The page re-counts the words it was handed and refuses the phrase if it doesn't match what you asked for.</li>
+      <li><strong>Ordinal/token protection.</strong> Every Send and every Recovery build queries the 1Sat overlay first and excludes protected UTXOs. Indexer down = build blocked, no override.</li>
+    </ul>
+    <p>What is different — read this before using it with real funds:</p>
+    <ul>
+      <li class="warn"><strong>No vault, no auto-lock.</strong> Classic encrypts your mnemonic behind a password and locks itself after 10 minutes and whenever the tab is hidden. The Alternate UI does neither: the wallet lives in the page for as long as the tab is open, and an encrypted backup is an explicit, optional action on the Backup panel. Use <em>Clear wallet</em>, or close the tab, when you step away. <strong>Prefer Classic on a machine you don't fully control.</strong></li>
+      <li><strong>Recovery is one consolidated transaction</strong>, not per-address sweeps. <em>Scan for UTXOs</em> walks the receive and change chains, then <em>Build consolidated transaction</em> produces a single signed transaction spending every found UTXO into one destination. Classic instead previews and broadcasts one sweep per funded address.</li>
+      <li><strong>A scan that fails, stops.</strong> Address lookups are rate-limited and retried with backoff; if one still fails, the whole scan aborts with an error rather than reporting a "complete" scan that quietly omits an address. A recovery tool that under-reports your coins is worse than one that tells you it failed.</li>
+      <li><strong>WhatsOnChain only</strong> for address scanning — there is no Bitails multi-address lookup, so a large scan is slower (roughly one address every 350ms, staying inside WoC's rate limit). Watch the progress in the status line.</li>
+      <li><strong>Settings panel.</strong> The API base, explorer base and fee rate (satoshis/KB, shared by Send and Recovery) are editable and persist in <code>localStorage</code>. Both URLs must be HTTPS, and the API base must be on the CSP <code>connect-src</code> allowlist above — point it elsewhere and the browser blocks the request.</li>
+    </ul>
+    <p>Both pages link to each other in the footer, and both are covered by <code>./build.sh</code>, which re-pins each page's inline-script CSP hash and verifies its SRI hashes against the live CDN.</p>
   </div>
 
   <h2>Disclaimer</h2>
