@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-vaaY26EvS+524rBmXJa76qEXqyertNpyssyg92u0J8w=' https://cdn.jsdelivr.net;
+    script-src 'sha256-lFpu0/x41OxuYwopoOKPoXi72c5Y+GeEbVpsQRDSar0=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -158,7 +158,9 @@ const PRESETS = Object.freeze({
   'twetch':      { bip: 44, coin: 0,   account: 0, label: 'Twetch' },
 });
 
-const FEE_PER_KB = 50;          // sat/KB, conservative
+const DEFAULT_FEE_PER_KB = 100; // sat/KB. User-adjustable (Prefs.feePerKb) so a
+                                // network fee-floor change needs no redeploy.
+const MAX_FEE_PER_KB = 100000;  // sanity ceiling on user input (0.001 BSV/KB)
 const PBKDF2_ITER = 310000;     // OWASP 2023 minimum for PBKDF2-SHA256
 const AUTOLOCK_MS = 10 * 60 * 1000;
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
@@ -304,6 +306,7 @@ const state = {
 
   // ui prefs
   hideKeys: true,
+  feePerKb: DEFAULT_FEE_PER_KB,             // sat/KB used by send + sweep
 
   // send flow — set by Actions.buildSend, cleared by cancel/broadcast
   draftTx: null,                           // { tx, hex, txid, to, sentSats, changeSats, fee, vsize }
@@ -353,7 +356,7 @@ const TxBuilder = {
   // Returns { tx, hex, txid, fee, sentSats, changeSats }.
   // If `sentSats === 'max'`, sweeps the full input minus fee to `toAddress`
   // with no change output. Otherwise creates a change output back to fromAddress.
-  send({ utxos, toAddress, sats, privateKey, fromAddress, feePerKb = FEE_PER_KB }) {
+  send({ utxos, toAddress, sats, privateKey, fromAddress, feePerKb = state.feePerKb }) {
     if (!utxos || utxos.length === 0) throw new Error('No UTXOs to spend');
     if (!toAddress) throw new Error('No recipient address');
     const totalIn = utxos.reduce((a, u) => a + u.satoshis, 0);
@@ -400,7 +403,7 @@ const TxBuilder = {
     t2.sign(privateKey);
 
     const hex = t2.toString();
-    return { tx: t2, hex, txid: t2.hash, fee, sentSats, changeSats, vsize };
+    return { tx: t2, hex, txid: t2.hash, fee, sentSats, changeSats, vsize, feePerKb };
   },
 };
 
@@ -418,6 +421,7 @@ const Prefs = {
         bip: p.bip, coin: p.coin, account: p.account,
         change: p.change, addrIndex: p.addrIndex,
         preset: p.preset, hideKeys: p.hideKeys,
+        feePerKb: p.feePerKb,
       }));
     } catch {}
   },
@@ -601,6 +605,16 @@ function normalizeWocUtxos(raw, address) {
     txid: u.tx_hash, vout: u.tx_pos, satoshis: u.value, address,
     scriptHex: bsv.Script.buildPublicKeyHashOut(address).toHex(),
   }));
+}
+
+// Clamp a fee rate to something sane. Returns `fallback` for anything that
+// isn't a usable number: a NaN or 0 here would silently build a zero-fee
+// transaction that no miner accepts, and an absurd value would burn the
+// balance as fee. Used for both live input and values read back from Prefs.
+function sanitizeFeePerKb(value, fallback = DEFAULT_FEE_PER_KB) {
+  const n = typeof value === 'number' ? value : parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) return fallback;
+  return Math.min(n, MAX_FEE_PER_KB);
 }
 
 // Address validity (network-aware via SDK). Returns true/false.
@@ -987,10 +1001,11 @@ function renderSendPanel(s) {
     ]);
   }
   if (draft) return renderSendConfirm(s, draft);
-  const toId = 'send-to', amtId = 'send-amt';
+  const toId = 'send-to', amtId = 'send-amt', feeId = 'send-fee';
   const setMax = () => {
     if (!s.balance) { Status.error('Refresh balance first.'); return; }
-    // Use a generous fee-pad guess (~250 sat at 50 sat/KB) and let the builder
+    // Use a generous fee-pad guess (~300 sat covers a normal tx well past
+    // 100 sat/KB) and let the builder
     // recompute. Worst case the user clicks "max" and gets a slightly small
     // amount back; nothing breaks.
     const total = s.balance.confirmed + s.balance.unconfirmed;
@@ -1010,6 +1025,25 @@ function renderSendPanel(s) {
         el('input', { id: amtId, type: 'number', min: '1', step: '1', placeholder: '0' }),
         el('button', { onclick: setMax, style: 'flex:0 0 auto' }, 'Max'),
       ]),
+    ]),
+    el('div', { style: 'margin-bottom:8px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' },
+        'Fee rate (sat/KB) — applies to Send and to recovery sweeps'),
+      el('div', { class: 'row' }, [
+        el('input', {
+          id: feeId, type: 'number', min: '1', max: String(MAX_FEE_PER_KB), step: '1',
+          value: String(s.feePerKb),
+          // Commit on change so the value is live before "Build transaction",
+          // and persisted so it survives a lock/reload.
+          onchange: () => Actions.setFeePerKb($(feeId).value),
+        }),
+        el('button', { style: 'flex:0 0 auto',
+                       onclick: () => Actions.setFeePerKb(DEFAULT_FEE_PER_KB) }, 'Default'),
+      ]),
+      s.feePerKb !== DEFAULT_FEE_PER_KB
+        ? el('div', { class: 'warn', style: 'font-size:11px;margin-top:4px' },
+            'Custom fee rate — default is ' + DEFAULT_FEE_PER_KB + ' sat/KB.')
+        : null,
     ]),
     el('div', { class: 'row' }, [
       el('button', { class: 'primary', disabled: s.busy,
@@ -1037,7 +1071,7 @@ function renderSendConfirm(s, draft) {
     ]),
     el('div', { style: 'margin-bottom:12px' }, [
       el('div', { class: 'muted', style: 'font-size:11px' }, 'Miner fee'),
-      el('div', {}, [Fmt.sats(draft.fee) + ' sats (' + draft.vsize + ' bytes, ' + FEE_PER_KB + ' sat/KB)']),
+      el('div', {}, [Fmt.sats(draft.fee) + ' sats (' + draft.vsize + ' bytes, ' + draft.feePerKb + ' sat/KB)']),
     ]),
     draft.changeSats > 0 ? el('div', { style: 'margin-bottom:12px' }, [
       el('div', { class: 'muted', style: 'font-size:11px' }, 'Change back to you'),
@@ -1631,6 +1665,21 @@ const Actions = {
     }
   },
   // ---- send flow: build (preview) then broadcast (confirm)
+  // Fee rate is a pref, not a per-transaction argument: sweeps use it too, and
+  // it must survive a lock/reload the same way the derivation prefs do.
+  setFeePerKb(raw) {
+    const feePerKb = sanitizeFeePerKb(raw);
+    setState({ feePerKb });
+    Prefs.save(state);
+    // Say so whenever the value in use isn't the value asked for — whether it
+    // was rejected outright or silently clamped to the ceiling.
+    const asked = typeof raw === 'number' ? raw : parseInt(String(raw ?? '').trim(), 10);
+    if (!Number.isFinite(asked) || asked !== feePerKb) {
+      Status.error('Fee rate must be a whole number from 1 to ' + Fmt.sats(MAX_FEE_PER_KB) +
+                   ' sat/KB — using ' + Fmt.sats(feePerKb) + ' sat/KB.');
+    }
+  },
+
   async buildSend(toRaw, amtRaw) {
     Status.clear();
     if (!state.derived) { Status.error('No address derived.'); return; }
@@ -2001,6 +2050,9 @@ function boot() {
     addrIndex: typeof prefs.addrIndex === 'number' ? prefs.addrIndex : 0,
     preset:   typeof prefs.preset    === 'string' ? prefs.preset    : 'default',
     hideKeys: typeof prefs.hideKeys  === 'boolean' ? prefs.hideKeys : true,
+    // A stored fee is user input that has been round-tripped through
+    // localStorage — re-validate it rather than trust it back.
+    feePerKb: sanitizeFeePerKb(prefs.feePerKb, DEFAULT_FEE_PER_KB),
   });
   wireGlobalEvents();
   // Fetch BSV price once at boot; non-fatal if it fails.

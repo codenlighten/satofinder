@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-ehbmTZCH+wz5H7xIZUvKa0p9dADHcVnGQQUcy3oPxBM=' https://cdn.jsdelivr.net;
+    script-src 'sha256-mVfazxEzhg/8lK0CiI/u/5UW5s+F0REFOegRgHQ7WqY=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -463,7 +463,7 @@
             <div class="section-title"><div><h3>Network settings</h3><p>Configure endpoints used for public blockchain data and transaction broadcast.</p></div></div>
             <div class="field"><label for="apiBase">WhatsOnChain API base</label><input id="apiBase" value="https://api.whatsonchain.com/v1/bsv/main"><div class="hint">Must be HTTPS and on the CSP <code>connect-src</code> allowlist, otherwise the browser blocks the request.</div></div>
             <div class="field" style="margin-top:15px"><label for="explorerBase">Explorer transaction base</label><input id="explorerBase" value="https://whatsonchain.com/tx/"><div class="hint">Must be an HTTPS URL.</div></div>
-            <div class="field" style="margin-top:15px"><label for="feePerKb">Fee rate (satoshis per KB)</label><input id="feePerKb" type="number" min="1" value="50"><div class="hint">Used by both Send and Recovery.</div></div>
+            <div class="field" style="margin-top:15px"><label for="feePerKb">Fee rate (satoshis per KB)</label><input id="feePerKb" type="number" min="1" max="100000" value="100"><div class="hint">Used by both Send and Recovery.</div></div>
             <div class="actions"><button class="btn btn-primary" id="saveSettingsBtn">Save settings</button><button class="btn btn-ghost" id="resetSettingsBtn">Reset defaults</button><button class="btn btn-blue" id="testApiBtn">Test API</button></div>
             <div class="status" id="settingsStatus">Using default public endpoints.</div>
             <div class="divider"></div>
@@ -521,10 +521,15 @@
   const LOCK_IDLE_MS = 10 * 60 * 1000;
   const LOCK_HIDDEN_GRACE_MS = 60 * 1000;
 
+  // Fee rate is user-adjustable so a network fee-floor change needs no
+  // redeploy. Ceiling is a sanity bound: a fat-fingered rate would otherwise
+  // burn the balance as fee.
+  const MAX_FEE_PER_KB = 100_000;
+
   const DEFAULT_SETTINGS = {
     apiBase: 'https://api.whatsonchain.com/v1/bsv/main',
     explorerBase: 'https://whatsonchain.com/tx/',
-    feePerKb: 50,
+    feePerKb: 100,
   };
 
   const state = {
@@ -545,6 +550,14 @@
 
   const $ = (id) => document.getElementById(id);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Anything not a usable whole rate falls back to the default; absurd values
+  // clamp. A 0 here would build a zero-fee tx no miner accepts.
+  function sanitizeFee(value) {
+    const n = typeof value === 'number' ? value : Number.parseInt(String(value ?? '').trim(), 10);
+    if (!Number.isInteger(n) || n < 1) return DEFAULT_SETTINGS.feePerKb;
+    return Math.min(n, MAX_FEE_PER_KB);
+  }
 
   function safeInt(value, fallback = 0) {
     const n = Number.parseInt(value, 10);
@@ -608,7 +621,7 @@
       // A tampered/hand-edited localStorage must not smuggle in a javascript: URL.
       if (!/^https:\/\//i.test(merged.apiBase)) merged.apiBase = DEFAULT_SETTINGS.apiBase;
       if (!/^https:\/\//i.test(merged.explorerBase)) merged.explorerBase = DEFAULT_SETTINGS.explorerBase;
-      merged.feePerKb = Math.max(1, safeInt(merged.feePerKb, DEFAULT_SETTINGS.feePerKb));
+      merged.feePerKb = sanitizeFee(merged.feePerKb);
       return merged;
     } catch {
       return { ...DEFAULT_SETTINGS };
@@ -1556,11 +1569,16 @@
   action('saveSettingsBtn', 'settingsStatus', async () => {
     const apiBase = requireHttps($('apiBase').value.trim().replace(/\/$/, ''), 'API base');
     const explorerBase = requireHttps($('explorerBase').value.trim(), 'Explorer base');
-    const feePerKb = Math.max(1, safeInt($('feePerKb').value, DEFAULT_SETTINGS.feePerKb));
+    const raw = $('feePerKb').value;
+    const feePerKb = sanitizeFee(raw);
     Object.assign(state.settings, { apiBase, explorerBase, feePerKb });
     saveSettings();
-    syncFeeDisplay();
-    setStatus('settingsStatus', 'Network settings saved.', 'success');
+    applySettingsToInputs();
+    const asked = Number.parseInt(String(raw).trim(), 10);
+    if (!Number.isInteger(asked) || asked !== feePerKb) {
+      throw new Error(`Fee rate must be a whole number from 1 to ${Fmt.sats(MAX_FEE_PER_KB)} sat/KB — saved as ${Fmt.sats(feePerKb)}. Other settings saved.`);
+    }
+    setStatus('settingsStatus', `Settings saved. Fee rate ${Fmt.sats(feePerKb)} sat/KB.`, 'success');
     await loadPrice();
   });
 
