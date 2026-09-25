@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-4F8DOEmPPZoPzMxrl20FIMCOzTPipOuVj/QcXr0M70k=' https://cdn.jsdelivr.net;
+    script-src 'sha256-f1ebwLKsjwp74+ADFAfYLm1XQvWcDz1573JfUAey8jo=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -150,7 +150,12 @@ const ENDPOINTS = Object.freeze({
   // could burn an NFT / destroy a token. Hard-block on unavailability is the
   // safe default in Tokens.fetchProtected().
   gorillapool: {
-    unspent:       (a) => `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent`,
+    // Paged: the endpoint defaults to 100 rows and to non-BSV-20 outputs only;
+    // `bsv20=true` returns the BSV-20 outputs instead. Tokens.protectedSet()
+    // walks both, every page.
+    unspent:       (a, offset = 0, bsv20 = false) =>
+                     `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent` +
+                     `?limit=${ORDINALS_PAGE}&offset=${offset}` + (bsv20 ? '&bsv20=true' : ''),
     bsv20Balance:  (a) => `https://ordinals.gorillapool.io/api/bsv20/${encodeURIComponent(a)}/balance`,
   },
 });
@@ -175,6 +180,8 @@ const PBKDF2_ITER = 310000;     // OWASP 2023 minimum for PBKDF2-SHA256
 const AUTOLOCK_MS = 10 * 60 * 1000;
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
 const BITAILS_BATCH = 20;       // per-request address count
+const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
+const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 const VAULT_KEY = 'satofinder.vault.v1';
 const PREFS_KEY = 'satofinder.prefs.v1';
 const TIPPING_ADDRESS = '139Gv2y2JcjCNdnJNS3kWGm36mjjespfQc';
@@ -471,7 +478,7 @@ const Net = {
                 }),
   },
   gorillapool: {
-    unspent:      (a) => api(ENDPOINTS.gorillapool.unspent(a)),
+    unspent:      (a, offset, bsv20) => api(ENDPOINTS.gorillapool.unspent(a, offset, bsv20)),
     bsv20Balance: (a) => api(ENDPOINTS.gorillapool.bsv20Balance(a)),
   },
   bitails: {
@@ -563,26 +570,46 @@ const Tokens = {
     if (!o) return false;
     return !!(o.insc || o.bsv20 || o.lock);
   },
-  // Returns a Set of "txid:vout" strings for every protected UTXO at addr.
-  // Throws on indexer error — callers MUST catch and block the spend.
+  // Returns a Set of "txid:vout" strings for every protected UTXO at addr:
+  // every page of the plain listing (ordinals / locks), and every output of
+  // the BSV-20 listing. Throws on indexer error or an incomplete scan — callers
+  // MUST catch and block the spend.
   async protectedSet(addr) {
-    let raw;
-    try { raw = await Net.gorillapool.unspent(addr); }
-    catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build transaction — cannot verify UTXOs are safe to spend.`); }
-    if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned unexpected shape — refusing to build.');
     const set = new Set();
-    for (const t of raw) {
-      if (Tokens.isProtected(t)) set.add(`${t.txid}:${t.vout}`);
+    const outpointOf = (t) => {
+      if (typeof t.txid === 'string' && Number.isInteger(t.vout)) return `${t.txid}:${t.vout}`;
+      const m = typeof t.outpoint === 'string' && t.outpoint.match(/^([0-9a-f]{64})_(\d+)$/);
+      if (m) return `${m[1]}:${m[2]}`;
+      throw new Error('Ordinal/token indexer returned an output without an outpoint — refusing to build.');
+    };
+    for (const bsv20 of [false, true]) {
+      for (let page = 0, offset = 0; ; page++) {
+        if (page >= ORDINALS_MAX_PAGES) {
+          throw new Error('Too many ordinal/token outputs to check completely. Refusing to build — cannot verify UTXOs are safe to spend.');
+        }
+        let raw;
+        try { raw = await Net.gorillapool.unspent(addr, offset, bsv20); }
+        catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build transaction — cannot verify UTXOs are safe to spend.`); }
+        if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned unexpected shape — refusing to build.');
+        for (const t of raw) {
+          // Everything the BSV-20 listing returns is a token output.
+          if (bsv20 || Tokens.isProtected(t)) set.add(outpointOf(t));
+        }
+        if (raw.length < ORDINALS_PAGE) break;
+        offset += raw.length;
+      }
     }
     return set;
   },
-  // Filter a normalized UTXO list against a protected Set. Returns
+  // Filter a normalized UTXO list against a protected Set. Every 1-sat output
+  // is held back too: that is where ordinals live, and an indexer can lag
+  // behind an ordinal that has just arrived. Returns
   // { spendable: [...], protectedCount: N }.
   filter(utxos, protectedSet) {
     const out = [];
     let pc = 0;
     for (const u of utxos) {
-      if (protectedSet.has(`${u.txid}:${u.vout}`)) pc++; else out.push(u);
+      if (u.satoshis === 1 || protectedSet.has(`${u.txid}:${u.vout}`)) pc++; else out.push(u);
     }
     return { spendable: out, protectedCount: pc };
   },
@@ -956,7 +983,7 @@ function renderTokensPanel(s) {
     !d ? el('p', { class: 'muted' }, 'No address derived.')
        : el('div', {}, [
         el('p', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
-          'Read-only view of 1Sat ordinals and BSV-20 tokens at the current address (via ordinals.gorillapool.io). These UTXOs are automatically excluded from Send and Sweep so you can\'t accidentally burn them.'),
+          'Read-only view of 1Sat ordinals and BSV-20 tokens at the current address (via ordinals.gorillapool.io). These UTXOs, and every 1-sat output (which may hold an ordinal the indexer has not seen yet), are excluded from Send and Sweep; if the indexer cannot be checked completely, nothing is spent.'),
         el('div', { class: 'row', style: 'margin-bottom:8px' }, [
           el('button', { disabled: s.busy, onclick: () => Actions.loadTokens() },
             s.busy ? 'Loading…' : (fresh ? 'Reload' : 'Load tokens & ordinals')),
@@ -1092,7 +1119,7 @@ function renderSendConfirm(s, draft) {
       el('div', {}, [Fmt.sats(totalIn) + ' sats']),
     ]),
     (draft.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
-      `🛡 ${draft.protectedCount} ordinal/token UTXO${draft.protectedCount === 1 ? '' : 's'} at this address excluded from this transaction.`) : null,
+      `🛡 ${draft.protectedCount} ordinal/token or 1-sat UTXO${draft.protectedCount === 1 ? '' : 's'} at this address excluded from this transaction.`) : null,
     renderHexInspector(draft.hex),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.cancelSend() }, 'Cancel'),
@@ -1185,7 +1212,7 @@ function renderRecoveryRow(s, item, sweepResult) {
         el('div', { class: 'muted', style: 'font-size:11px' },
           `${Fmt.sats(preview.sentSats)} sats · fee ${Fmt.sats(preview.fee)} sats (${preview.vsize} bytes)`),
         (preview.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' },
-          `🛡 ${preview.protectedCount} ordinal/token UTXO${preview.protectedCount === 1 ? '' : 's'} at this address excluded from the sweep.`) : null,
+          `🛡 ${preview.protectedCount} ordinal/token or 1-sat UTXO${preview.protectedCount === 1 ? '' : 's'} at this address excluded from the sweep.`) : null,
         renderHexInspector(preview.hex),
         el('div', { class: 'row' }, [
           el('button', { onclick: () => Actions.cancelSweepPreview() }, 'Cancel'),
