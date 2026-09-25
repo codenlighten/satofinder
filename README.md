@@ -2,63 +2,67 @@
 
 By **[SmartLedger Technology](https://smartledger.technology)**.
 
-Single-file, fully client-side BSV wallet with encrypted local storage, BIP32/BIP44 derivation, send, and coin recovery sweep.
+SatoFinder is a BSV wallet that runs entirely in your browser. It keeps an encrypted vault on the device, derives BIP32/BIP44 addresses, and can send. It can also find coins left on other derivation paths of a mnemonic and sweep them back.
 
-Everything is in [`index.html`](index.html). Read every line.
+Each page is a single HTML file with no build step and no server component. The only network calls are to public blockchain APIs.
 
-## Quick start
+| page | what it is |
+|---|---|
+| [`index.html`](index.html) | The main wallet ("Classic"). It has a password vault, send, per-address recovery sweeps, a token/ordinal view and history. |
+| [`satofinder-modern.html`](satofinder-modern.html) | An alternate panelled interface with the same spending rules. Its recovery scan builds one consolidated transaction. |
+| [`help.html`](help.html) | User documentation. |
+
+## Run it locally
 
 ```sh
-# Serve locally (any static server)
-python3 -m http.server 8000
-# Open http://localhost:8000
-
-# Or deploy: drop index.html + manifest.json + service-worker.js + logo2.png on any static host.
+python3 -m http.server 8000     # any static server works
+# open http://localhost:8000
 ```
 
-## Security model
+## How it protects funds
 
-- **Mnemonic encryption**: PBKDF2-SHA256 (310,000 iter) → AES-GCM, in `localStorage`. No plaintext seed leaves your browser.
-- **Subresource Integrity (SRI)**: the four `@smartledger/bsv@3.4.3` CDN bundles are pinned by SHA-384. A compromised CDN can't ship modified JS.
-- **Content-Security-Policy**: inline script is pinned by SHA-256. Outbound network limited to `api.whatsonchain.com` and `api.bitails.io`. No eval, no inline event handlers.
-- **DOM safety**: zero `innerHTML` of API data. All third-party text rendered via `textContent`. Link `href`s validated against an allow-list.
-- **Auto-lock**: clears in-memory wallet after 10 min idle, or when tab is hidden.
-- **Hide-keys default**: WIF and mnemonic are not rendered into the DOM until you click "Show".
-- **No password recovery**: forgot password = wipe vault + re-import mnemonic. The encrypted blob is the only source of truth.
+- **Vault.** The mnemonic and optional BIP39 passphrase are encrypted with AES-GCM under a key from PBKDF2-SHA256 (310,000 iterations), then stored in `localStorage`. They never leave the browser. There is no password recovery: if you forget the password, wipe the vault and re-import the mnemonic.
+- **Replacing a vault** asks you to type `REPLACE`, and offers to download the existing encrypted vault first.
+- **Locking** happens after 10 minutes idle, when the tab is hidden (after a 60-second grace period in the alternate UI), or on demand. In the main wallet it clears the keys, recovery results, drafts and balances, and requests still in flight when the wallet locks are discarded when they return.
+- **Ordinals and tokens are never spent as plain sats.** Before building any Send or sweep, every page of GorillaPool's unspent listing is checked, both plain and BSV-20, and each ordinal, BSV-20 and lock output is excluded. Every 1-sat output is also held back, in case the indexer hasn't seen a new ordinal yet. If the indexer is unreachable, or the listing can't be read completely, nothing is built.
+- **You confirm before broadcasting.** Nothing is broadcast until you confirm a built, signed transaction. The confirmation shows its destination, amount and fee, and the raw hex is there to inspect.
+- **Pinned code.**
+  - The one external script, `@smartledger/bsv@7.1.0` from jsDelivr, is pinned by a SHA-384 SRI hash.
+  - The inline script is pinned by its SHA-256 in the page's CSP.
+  - The CSP allows network access only to `api.whatsonchain.com`, `api.bitails.io` and `ordinals.gorillapool.io`.
+- **DOM safety.** API data is rendered with `textContent`, never `innerHTML`.
+- **No offline cache.** `service-worker.js` exists only to remove the old cache-first worker from browsers that still have it registered.
 
-## Important headers (deploy-time)
+## Editing
 
-The meta-tag CSP ships with the file, but `frame-ancestors` only works as a real HTTP header. Add to your deploy:
+Re-run `build.sh` after any change to a page's inline script. Otherwise the browser refuses to run it.
 
+```sh
+./build.sh                  # re-pin the inline-script CSP hash of each page; warn on CDN SRI drift
+./build.sh --no-network     # skip the drift check
+FILE=index.html ./build.sh  # one page only
 ```
-# Netlify _headers, nginx add_header, Caddy header, etc.
-X-Frame-Options: DENY
-Content-Security-Policy: frame-ancestors 'none'
-Referrer-Policy: no-referrer
-Permissions-Policy: clipboard-write=(self)
+
+Upgrading the SDK is deliberate: change the version in the `<script>` tag, update its `integrity` hash and the `TARGETS` list in `build.sh`, and run `build.sh`.
+
+## Releasing
+
+```sh
+./make-tarball.sh           # runs build.sh, then a release-blocking SRI check, then writes dist/satofinder-v<VERSION>.tar.gz
 ```
 
-## Files
+The tarball is deterministic, so the printed SHA-256 can be compared across builds. `VERSION` comes from `const VERSION` in `index.html`.
+
+`Dockerfile` builds that tarball and serves it with nginx. `nginx.conf` and `security-headers.conf` add the headers a meta-tag CSP can't set: `frame-ancestors`, `X-Frame-Options`, HSTS, `Referrer-Policy` and `Permissions-Policy`. `captain-definition` deploys the same image on CapRover. Any other static host needs the equivalent headers.
+
+## Other files
 
 | file | purpose |
 |---|---|
-| `index.html` | the entire wallet — HTML + CSS + JS in one file (~1,500 lines) |
-| `service-worker.js` | cache-first SW; pre-caches index + pinned CDN bundles for offline use |
-| `manifest.json` | PWA manifest |
-| `help.html` | user-facing docs |
-| `build.sh` | recomputes the inline-script CSP hash after every edit; verifies SRI drift |
-| `spike.html` | Phase 0 SDK + crypto smoke tests (open in a browser) |
-| `logo2.png` | PWA icon + favicon |
-
-## After editing `index.html`
-
-```sh
-./build.sh            # patches CSP hash; checks live CDN SRI drift
-./build.sh --no-network   # skip the network check
-```
-
-The browser will refuse the inline script if you change it without re-running `build.sh`.
+| `manifest.json`, `logo2.png` | PWA manifest and icon |
+| `spike.html` | early SDK and crypto smoke tests (still on `@smartledger/bsv@3.4.3`); not shipped |
+| `archive/` | an earlier version, kept for reference; not shipped |
 
 ## Disclaimer
 
-Free, as-is, no warranty. Test with small amounts first. The author is not responsible for loss of funds.
+Free and provided as-is, with no warranty. Test with small amounts first. The authors are not responsible for loss of funds.
