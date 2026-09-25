@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-mVfazxEzhg/8lK0CiI/u/5UW5s+F0REFOegRgHQ7WqY=' https://cdn.jsdelivr.net;
+    script-src 'sha256-lycbUy/culgC7WnWfjiJPG7yda7QFIoFushP50Br5r8=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1250,11 +1250,37 @@
   // 09. UI plumbing
   // ===========================================================================
 
+  // The confirmation describes the signed transaction itself, decoded again
+  // from its hex, never the form fields, which may have changed since the build.
+  function describeSignedTx(tx, ownAddress) {
+    const decoded = new bsv.Transaction(tx.toString());
+    const lines = decoded.outputs.map((o, i) => {
+      let to;
+      try { to = o.script.toAddress('livenet').toString(); } catch { to = null; }
+      const label = !to ? 'a non-address script'
+        : (to === ownAddress ? `${to} (change back to you)` : to);
+      return `Output ${i + 1}: ${Fmt.sats(o.satoshis)} sats to ${label}`;
+    });
+    return [
+      `${decoded.inputs.length} input(s), ${Fmt.sats(tx.inputAmount)} sats in.`,
+      ...lines,
+      `Miner fee: ${Fmt.sats(tx.getFee())} sats.`,
+      `TXID: ${decoded.hash}`,
+      'This is irreversible.',
+    ].join('\n');
+  }
+  function broadcastTxid(result, tx) {
+    const txid = typeof result === 'string' ? result.trim().replace(/^"|"$/g, '') : (result?.txid || result?.result || JSON.stringify(result));
+    return txid === tx.hash ? txid
+      : `${txid} (the local TXID is ${tx.hash}; check WhatsOnChain before retrying)`;
+  }
+
   function confirmAction(title, text) {
     return new Promise(resolve => {
       const dialog = $('confirmDialog');
       $('confirmTitle').textContent = title;
       $('confirmText').textContent = text;
+      $('confirmText').style.whiteSpace = 'pre-line';
       const done = (value) => {
         $('confirmYes').onclick = $('confirmNo').onclick = null;
         dialog.onclose = null;
@@ -1379,14 +1405,14 @@
 
   action('broadcastTxBtn', 'sendStatus', async () => {
     if (!state.builtTx) throw new Error('Build a transaction first.');
-    const confirmed = await confirmAction('Broadcast transaction?',
-      `This is irreversible. Sending ${Fmt.sats($('sendAmount').value)} sats to ${$('sendTo').value.trim()}.`);
-    if (!confirmed) return;
+    const tx = state.builtTx;
+    const confirmed = await confirmAction('Broadcast transaction?', describeSignedTx(tx, state.wallet && state.wallet.address));
+    if (!confirmed || state.builtTx !== tx) return;
     setStatus('sendStatus', 'Broadcasting…', 'warn');
-    const result = await Net.woc.broadcast(state.builtTx.toString());
-    const txid = typeof result === 'string' ? result.trim() : (result?.txid || result?.result || JSON.stringify(result));
+    const result = await Net.woc.broadcast(tx.toString());
+    const txid = broadcastTxid(result, tx);
     $('broadcastTxBtn').disabled = true;
-    $('inspectTxLink').href = `${state.settings.explorerBase}${encodeURIComponent(txid)}`;
+    $('inspectTxLink').href = `${state.settings.explorerBase}${encodeURIComponent(tx.hash)}`;
     setStatus('sendStatus', `Broadcast accepted. TXID: ${txid}`, 'success');
   });
 
@@ -1414,12 +1440,12 @@
   action('buildRecoveryBtn', 'recoveryStatus', buildRecoveryTransaction);
   action('broadcastRecoveryBtn', 'recoveryStatus', async () => {
     if (!state.recoveryTx) throw new Error('Build the recovery transaction first.');
-    const confirmed = await confirmAction('Broadcast recovery?',
-      `This is irreversible. It spends all ${state.recoveryUtxos.length} scanned UTXO(s) and sends the value to ${$('recoveryDestination').value.trim()}.`);
-    if (!confirmed) return;
+    const tx = state.recoveryTx;
+    const confirmed = await confirmAction('Broadcast recovery?', describeSignedTx(tx, null));
+    if (!confirmed || state.recoveryTx !== tx) return;
     setStatus('recoveryStatus', 'Broadcasting…', 'warn');
-    const result = await Net.woc.broadcast(state.recoveryTx.toString());
-    const txid = typeof result === 'string' ? result.trim() : (result?.txid || result?.result || JSON.stringify(result));
+    const result = await Net.woc.broadcast(tx.toString());
+    const txid = broadcastTxid(result, tx);
     $('broadcastRecoveryBtn').disabled = true;
     setStatus('recoveryStatus', `Recovery broadcast accepted. TXID: ${txid}`, 'success');
   });
