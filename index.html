@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-Yu1QZrsoBA1XsAGKr3FF33F8dLuxeWJfGjpd9hAOaik=' https://cdn.jsdelivr.net;
+    script-src 'sha256-y6nPYurlAAqq6m5cSRoghxg/GDFc1h4Arzy8mn7unHA=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -425,9 +425,9 @@ const TxBuilder = {
     if (!t2.isFullySigned() || t2.verify() !== true) throw new Error('Transaction did not sign correctly — nothing was built.');
     const outs = t2.outputs;
     const paysTo = (o, a) => { try { return o.script.toAddress('livenet').toString() === a; } catch { return false; } };
-    if (!outs.length || !paysTo(outs[0], toAddress) || outs[0].satoshis !== sentSats
-        || (outs.length === 2 && (!paysTo(outs[1], fromAddress) || outs[1].satoshis !== changeSats))
-        || outs.length > 2) {
+    const expectedOutputs = changeSats > 0 ? 2 : 1;
+    if (outs.length !== expectedOutputs || !paysTo(outs[0], toAddress) || outs[0].satoshis !== sentSats
+        || (changeSats > 0 && (!paysTo(outs[1], fromAddress) || outs[1].satoshis !== changeSats))) {
       throw new Error('Internal check failed: the signed outputs do not match the request — nothing was built.');
     }
     const signedFee = totalIn - outs.reduce((a, o) => a + o.satoshis, 0);
@@ -1521,14 +1521,13 @@ const clearedWalletState = () => ({
 });
 // Address-scoped results (balance, history, tokens, a send draft) also go
 // stale when the derivation path changes, which replaces state.derived.
-// The TXID the node returned, flagged if it isn't the one we signed. After a
-// timeout or odd reply, check WhatsOnChain for the local TXID before retrying
-// — a rebuilt transaction would spend again.
-const checkedTxid = (raw, localTxid) => {
-  const txid = typeof raw === 'string' ? raw.trim().replace(/^"|"$/g, '') : String(raw);
-  return txid === localTxid ? txid
-    : `${txid} (the signed TXID is ${localTxid}; check WhatsOnChain for it before retrying)`;
-};
+// Did the node's reply name the transaction we signed? If not, the outcome is
+// unknown: say so and give the signed TXID to look up before retrying, since
+// a rebuilt transaction could spend again.
+const broadcastMatches = (raw, localTxid) =>
+  (typeof raw === 'string' ? raw.trim().replace(/^"|"$/g, '') : '') === localTxid;
+const unknownOutcome = (txid) =>
+  `The broadcast reply did not confirm this transaction. Look up ${txid} on WhatsOnChain before trying again.`;
 const stillCurrent = (session, derived) => session === walletSession && state.derived === derived;
 
 const Actions = {
@@ -1848,11 +1847,16 @@ const Actions = {
     const session = walletSession;
     try {
       const txid = await Net.woc.broadcast(d.hex);
-      const cleanTxid = checkedTxid(txid, d.txid);
       // The broadcast happened either way, so always report it; only the state
       // belongs to the session that started it.
-      if (session === walletSession) setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
-      Status.info(`Broadcast OK. Txid: ${cleanTxid}`);
+      const ok = broadcastMatches(txid, d.txid);
+      // On an unknown outcome keep the draft: re-sending the same signed hex
+      // can't pay twice, unlike building a new transaction.
+      if (session === walletSession) {
+        setState(ok ? { draftTx: null, busy: false, balance: null } : { busy: false, balance: null });
+      }
+      if (ok) Status.info(`Broadcast OK. Txid: ${d.txid}`);
+      else Status.error(unknownOutcome(d.txid));
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -1927,7 +1931,8 @@ const Actions = {
     const session = walletSession;
     try {
       const txidRaw = await Net.woc.broadcast(draft.hex);
-      const txid = checkedTxid(txidRaw, draft.txid);
+      const txid = draft.txid;
+      if (!broadcastMatches(txidRaw, txid)) throw new Error(unknownOutcome(txid));
       if (session !== walletSession) {
         Status.info(`A sweep started before the lock was broadcast: ${txid}`);
         return { ok: true, txid };

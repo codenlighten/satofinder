@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-Q6Z0NlVDHg2VSumo3mhsd2dTdEoXfxrtMOJIaM+hnyk=' https://cdn.jsdelivr.net;
+    script-src 'sha256-NufrREtqFSRjqWr+PoyU9fc1y5oc6u8bRWvtD01aq8o=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1290,18 +1290,25 @@
         : (to === ownAddress ? `${to} (change back to you)` : to);
       return `Output ${i + 1}: ${Fmt.sats(o.satoshis)} sats to ${label}`;
     });
+    // Input amounts aren't in the hex; they are the prevouts this build spent.
+    const fee = tx.inputAmount - decoded.outputs.reduce((sum, o) => sum + o.satoshis, 0);
+    if (!Number.isInteger(fee) || fee < 0) throw new Error('Could not work out the fee of the signed transaction.');
     return [
       `${decoded.inputs.length} input(s), ${Fmt.sats(tx.inputAmount)} sats in.`,
       ...lines,
-      `Miner fee: ${Fmt.sats(tx.getFee())} sats.`,
+      `Miner fee: ${Fmt.sats(fee)} sats.`,
       `TXID: ${decoded.hash}`,
       'This is irreversible.',
     ].join('\n');
   }
+  // Throws unless the node's reply names the transaction we signed: otherwise
+  // the outcome is unknown, and a rebuilt transaction could spend again.
   function broadcastTxid(result, tx) {
-    const txid = typeof result === 'string' ? result.trim().replace(/^"|"$/g, '') : (result?.txid || result?.result || JSON.stringify(result));
-    return txid === tx.hash ? txid
-      : `${txid} (the local TXID is ${tx.hash}; check WhatsOnChain before retrying)`;
+    const txid = typeof result === 'string' ? result.trim().replace(/^"|"$/g, '') : (result?.txid || result?.result);
+    if (txid !== tx.hash) {
+      throw new Error(`The broadcast reply did not confirm this transaction. Look up ${tx.hash} on WhatsOnChain before trying again.`);
+    }
+    return txid;
   }
 
   function confirmAction(title, text) {

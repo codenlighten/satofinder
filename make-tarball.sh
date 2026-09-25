@@ -80,30 +80,36 @@ if [[ $NO_NET -eq 0 ]]; then
   drift=0
   # Check every CDN script each page actually pins, at the URL it pins, so
   # this can't fall behind a version bump the way a hard-coded list did.
-  while IFS=$'\t' read -r page url pinned; do
-    live=$(curl -sSL "$url" | openssl dgst -sha384 -binary | openssl base64 -A)
-    if [[ "sha384-${live}" == "$pinned" ]]; then
-      printf '    OK    %s  %s\n' "$page" "$url"
-    else
-      printf '    DRIFT %s  %s — live=%s\n' "$page" "$url" "$live" >&2
-      drift=$((drift + 1))
-    fi
-  done < <(python3 - "$SRC_DIR" <<'PY'
+  # Parse first and check the parser's exit status: a failure inside a
+  # process substitution would otherwise pass silently.
+  pins=$(python3 - "$SRC_DIR" <<'PY'
 import re, sys
 for page in ('index.html', 'satofinder-modern.html'):
     src = open(f'{sys.argv[1]}/{page}').read()
-    tags = re.findall(r'<script\s[^>]*src="(https://[^"]+)"[^>]*>', src)
+    tags = re.findall(r'<script\s([^>]*src="https://[^"]+"[^>]*)>', src)
     if not tags:
         sys.exit(f'no CDN scripts found in {page}')
-    for tag in re.finditer(r'<script\s([^>]*src="https://[^"]+"[^>]*)>', src):
-        attrs = tag.group(1)
+    for attrs in tags:
         url = re.search(r'src="([^"]+)"', attrs).group(1)
         m = re.search(r'integrity="(sha384-[^"]+)"', attrs)
         if not m:
             sys.exit(f'{page}: {url} has no SRI hash')
         print(f'{page}\t{url}\t{m.group(1)}')
 PY
-)
+  ) || { echo "==> ERROR: could not read the pinned CDN scripts." >&2; exit 1; }
+  while IFS=$'\t' read -r page url pinned; do
+    if ! body=$(curl -fsSL "$url" | openssl dgst -sha384 -binary | openssl base64 -A) || [[ -z "$body" ]]; then
+      printf '    FAIL  %s  %s — download failed\n' "$page" "$url" >&2
+      drift=$((drift + 1))
+      continue
+    fi
+    if [[ "sha384-${body}" == "$pinned" ]]; then
+      printf '    OK    %s  %s\n' "$page" "$url"
+    else
+      printf '    DRIFT %s  %s — live=%s\n' "$page" "$url" "$body" >&2
+      drift=$((drift + 1))
+    fi
+  done <<< "$pins"
   if [[ $drift -gt 0 ]]; then
     echo "==> ERROR: $drift bundle(s) drifted from pinned SRI. Refusing to ship." >&2
     echo "    Either revert your @smartledger/bsv version or update the SRI tags deliberately." >&2
