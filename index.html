@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-Mzt+5kETWnDm3hnYF3ojpyHh17guU5OGxbNmILHC8mg=' https://cdn.jsdelivr.net;
+    script-src 'sha256-ZH+4Lge5xjd5lJyGQpJaTXqaM4jyQSfSkZlKFjYIShs=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1411,15 +1411,20 @@ function renderSetPassword(s, origin) {
   // lost wallet, so we double-prompt).
   const isImport = origin === 'import';
   const importPp = state.draft && state.draft.passphrase;
+  // Saving replaces the vault already on this device, so ask for a typed
+  // confirmation and offer its encrypted backup first.
+  const replacing = Vault.exists();
+  const replaceId = 'replace-confirm';
+  const replaceTyped = () => (replacing ? $(replaceId).value : '');
 
   const submit = () => {
     if (isImport) {
       // null sentinel -> setPassword falls back to state.draft.passphrase
-      Actions.setPassword($(pw1).value, $(pw2).value, origin, null);
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, null, replaceTyped());
     } else {
       const a = $(bp1).value, b = $(bp2).value;
       if (a !== b) { Status.error('BIP39 passphrases do not match.'); return; }
-      Actions.setPassword($(pw1).value, $(pw2).value, origin, a);
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, a, replaceTyped());
     }
   };
 
@@ -1448,10 +1453,21 @@ function renderSetPassword(s, origin) {
             'If set, this adds an extra secret to your seed — your mnemonic alone will NOT recover your wallet without it. Different from the SatoFinder password above. Leave blank for the standard BIP39 default.'),
         ]),
 
+    replacing
+      ? el('div', { style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' }, [
+          el('div', { class: 'err', style: 'font-size:12px;margin-bottom:8px' },
+            'A wallet vault already exists on this device. Saving will permanently replace it. ' +
+            'Unless you have its mnemonic written down, download its encrypted backup first.'),
+          el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download backup of the existing vault'),
+          el('input', { id: replaceId, type: 'text', placeholder: 'Type REPLACE to overwrite the existing vault',
+                        autocomplete: 'off', spellcheck: 'false', style: 'margin-top:8px' }),
+        ])
+      : null,
+
     el('div', { class: 'row', style: 'margin-top:16px' }, [
       el('button', { onclick: () => Actions.gotoLanding() }, 'Cancel'),
       el('button', { class: 'primary', disabled: s.busy, onclick: submit },
-        s.busy ? 'Encrypting…' : 'Save & unlock'),
+        s.busy ? 'Encrypting…' : (replacing ? 'Replace vault & unlock' : 'Save & unlock')),
     ]),
   ]);
 }
@@ -1559,10 +1575,14 @@ const Actions = {
   // ---- password set (used by both create and import). Accepts an optional
   // BIP39 passphrase ("25th word") — different from pw1/pw2 which encrypt the
   // local vault. Both are stored in the encrypted vault blob.
-  async setPassword(pw1, pw2, origin, bip39Pass) {
+  async setPassword(pw1, pw2, origin, bip39Pass, replaceTyped) {
     if (!pw1 || pw1.length < 12) { Status.error('Password must be at least 12 characters.'); return; }
     if (pw1 !== pw2) { Status.error('Passwords do not match.'); return; }
     if (passwordStrength(pw1) < 2) { Status.error('Password is too weak — mix character classes and length.'); return; }
+    if (Vault.exists() && (replaceTyped || '').trim() !== 'REPLACE') {
+      Status.error('A vault already exists on this device. Type REPLACE to overwrite it.');
+      return;
+    }
     const mnemonic = state.draft.mnemonic;
     if (!mnemonic) { Status.error('No mnemonic in flow — start over.'); Actions.gotoLanding(); return; }
     // On Create, the passphrase comes from this screen's input. On Import, it
