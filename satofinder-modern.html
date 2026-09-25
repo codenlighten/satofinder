@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-t8QrAgOqiO/kTaLKeS34ADUEoO6fhOmGQ9ziu042a3I=' https://cdn.jsdelivr.net;
+    script-src 'sha256-h5K3mUgbVUTUe0yKQXMTvbA22Ktk5yJ+y0xFp4Dk9W0=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -908,7 +908,8 @@
     script: u.scriptHex, satoshis: u.satoshis,
   });
 
-  const isValidAddress = (a) => { try { return !!bsv.Address.fromString(a); } catch { return false; } };
+  // Mainnet P2PKH only: fromString() also accepts testnet and P2SH addresses.
+  const isValidAddress = (a) => { try { return bsv.Address.isValid(a, 'livenet', 'pubkeyhash'); } catch { return false; } };
 
   // Fetches UTXOs for `address` and removes anything the 1Sat overlay flags.
   // Throws if the indexer can't confirm safety, or if nothing is left to spend.
@@ -927,7 +928,7 @@
     if (!state.wallet) throw new Error('Load a wallet first.');
     const to = $('sendTo').value.trim();
     const amount = safeInt($('sendAmount').value, -1);
-    if (!isValidAddress(to)) throw new Error('Recipient address is invalid.');
+    if (!isValidAddress(to)) throw new Error('Recipient must be a mainnet BSV address starting with 1 (P2PKH).');
     if (amount <= 0) throw new Error('Amount must be at least 1 satoshi.');
 
     setStatus('sendStatus', 'Checking UTXOs against the ordinal/token indexer…');
@@ -997,7 +998,7 @@
   async function buildRecoveryTransaction() {
     if (!state.recoveryUtxos.length) throw new Error('Run a recovery scan first.');
     const destination = $('recoveryDestination').value.trim();
-    if (!isValidAddress(destination)) throw new Error('Recovery destination is invalid.');
+    if (!isValidAddress(destination)) throw new Error('Recovery destination must be a mainnet BSV address starting with 1 (P2PKH).');
 
     const tx = new bsv.Transaction()
       .from(state.recoveryUtxos.map(toTxInput))

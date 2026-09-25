@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-ZH+4Lge5xjd5lJyGQpJaTXqaM4jyQSfSkZlKFjYIShs=' https://cdn.jsdelivr.net;
+    script-src 'sha256-KUH0luW/EWqi1CnKz/GsbUu0/3cb8P5fRJ7q5aSrJ1Q=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -419,8 +419,19 @@ const TxBuilder = {
     }
     t2.sign(privateKey);
 
+    // Report what the signed transaction actually does, not the plan: a dust
+    // change output folded into the fee makes the real fee larger than `fee`.
+    if (!t2.isFullySigned() || t2.verify() !== true) throw new Error('Transaction did not sign correctly — nothing was built.');
+    const outs = t2.outputs;
+    const paysTo = (o, a) => { try { return o.script.toAddress('livenet').toString() === a; } catch { return false; } };
+    if (!outs.length || !paysTo(outs[0], toAddress) || outs[0].satoshis !== sentSats
+        || (outs.length === 2 && (!paysTo(outs[1], fromAddress) || outs[1].satoshis !== changeSats))
+        || outs.length > 2) {
+      throw new Error('Internal check failed: the signed outputs do not match the request — nothing was built.');
+    }
+    const signedFee = totalIn - outs.reduce((a, o) => a + o.satoshis, 0);
     const hex = t2.toString();
-    return { tx: t2, hex, txid: t2.hash, fee, sentSats, changeSats, vsize, feePerKb };
+    return { tx: t2, hex, txid: t2.hash, fee: signedFee, sentSats, changeSats, vsize: t2.toBuffer().length, feePerKb };
   },
 };
 
@@ -655,8 +666,11 @@ function sanitizeFeePerKb(value, fallback = DEFAULT_FEE_PER_KB) {
 }
 
 // Address validity (network-aware via SDK). Returns true/false.
+// Mainnet P2PKH only: fromString() also accepts testnet addresses (coins sent
+// there land on a mainnet script nobody expects) and P2SH, which BSV no
+// longer treats as script-hash since Genesis.
 function isValidAddress(addr) {
-  try { return !!bsv.Address.fromString(addr); } catch { return false; }
+  try { return bsv.Address.isValid(addr, 'livenet', 'pubkeyhash'); } catch { return false; }
 }
 
 // Format helpers (pure, no DOM).
@@ -1506,6 +1520,14 @@ const clearedWalletState = () => ({
 });
 // Address-scoped results (balance, history, tokens, a send draft) also go
 // stale when the derivation path changes, which replaces state.derived.
+// The TXID the node returned, flagged if it isn't the one we signed. After a
+// timeout or odd reply, check WhatsOnChain for the local TXID before retrying
+// — a rebuilt transaction would spend again.
+const checkedTxid = (raw, localTxid) => {
+  const txid = typeof raw === 'string' ? raw.trim().replace(/^"|"$/g, '') : String(raw);
+  return txid === localTxid ? txid
+    : `${txid} (the signed TXID is ${localTxid}; check WhatsOnChain for it before retrying)`;
+};
 const stillCurrent = (session, derived) => session === walletSession && state.derived === derived;
 
 const Actions = {
@@ -1775,7 +1797,7 @@ const Actions = {
     if (!state.derived) { Status.error('No address derived.'); return; }
     const to = (toRaw || '').trim();
     if (!to) { Status.error('Enter a recipient address.'); return; }
-    if (!isValidAddress(to)) { Status.error('Recipient address is not a valid BSV address.'); return; }
+    if (!isValidAddress(to)) { Status.error('Recipient must be a mainnet BSV address starting with 1 (P2PKH).'); return; }
     const sats = parseInt(String(amtRaw).trim(), 10);
     if (!Number.isFinite(sats) || !Number.isInteger(sats) || sats <= 0) {
       Status.error('Amount must be a positive whole number of satoshis.');
@@ -1825,7 +1847,7 @@ const Actions = {
     const session = walletSession;
     try {
       const txid = await Net.woc.broadcast(d.hex);
-      const cleanTxid = typeof txid === 'string' ? txid.trim().replace(/^"|"$/g, '') : String(txid);
+      const cleanTxid = checkedTxid(txid, d.txid);
       // The broadcast happened either way, so always report it; only the state
       // belongs to the session that started it.
       if (session === walletSession) setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
@@ -1876,7 +1898,7 @@ const Actions = {
   // UI can show "swept N sats, protected M ordinal/token UTXOs".
   async _buildSweepDraft(item, destAddress) {
     if (!destAddress) throw new Error('No destination — enter or derive an address first.');
-    if (!isValidAddress(destAddress)) throw new Error('Destination is not a valid BSV address.');
+    if (!isValidAddress(destAddress)) throw new Error('Destination must be a mainnet BSV address starting with 1 (P2PKH).');
     if (!item || !item.utxos || item.utxos.length === 0) throw new Error('Nothing to sweep.');
     // Indexer-down here = hard block. Burning an ordinal would be irreversible.
     const protectedSet = await Tokens.protectedSet(item.address);
@@ -1893,7 +1915,7 @@ const Actions = {
     });
     return {
       path: item.path, fromAddress: item.address, to: destAddress,
-      hex: built.hex, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
+      hex: built.hex, txid: built.txid, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
       protectedCount,
     };
   },
@@ -1904,7 +1926,7 @@ const Actions = {
     const session = walletSession;
     try {
       const txidRaw = await Net.woc.broadcast(draft.hex);
-      const txid = typeof txidRaw === 'string' ? txidRaw.trim().replace(/^"|"$/g, '') : String(txidRaw);
+      const txid = checkedTxid(txidRaw, draft.txid);
       if (session !== walletSession) {
         Status.info(`A sweep started before the lock was broadcast: ${txid}`);
         return { ok: true, txid };
@@ -1977,7 +1999,7 @@ const Actions = {
     if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
     const destAddress = Actions._recoveryDest();
     if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
-    if (!isValidAddress(destAddress)) { Status.error('Destination is not a valid BSV address.'); return; }
+    if (!isValidAddress(destAddress)) { Status.error('Destination must be a mainnet BSV address starting with 1 (P2PKH).'); return; }
     const swept = (state.draft && state.draft.swept) || {};
     const pending = rec.found.filter(it => !swept[it.path]);
     if (pending.length === 0) { Status.info('All items already swept.'); return; }
