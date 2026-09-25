@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-lycbUy/culgC7WnWfjiJPG7yda7QFIoFushP50Br5r8=' https://cdn.jsdelivr.net;
+    script-src 'sha256-t8QrAgOqiO/kTaLKeS34ADUEoO6fhOmGQ9ziu042a3I=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -505,6 +505,8 @@
   // during a recovery scan is how a tool silently under-reports someone's coins.
   const WOC_MIN_INTERVAL_MS = 350;
   const RETRY_ATTEMPTS = 4;
+  const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
+  const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 
   const ENTROPY_TO_WORDS = { 128: 12, 160: 15, 192: 18, 224: 21, 256: 24 };
 
@@ -720,7 +722,12 @@
     // the per-address REST endpoint is the one that answers "is this UTXO safe
     // to spend as a plain sat?".
     gorillapool: {
-      unspent: (a) => withRetry(() => request(`https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent`), `Ordinal indexer lookup for ${a}`),
+      // Paged: the endpoint defaults to 100 rows and to non-BSV-20 outputs only;
+      // `bsv20=true` returns the BSV-20 outputs instead. Tokens.protectedSet()
+      // walks both, every page.
+      unspent: (a, offset = 0, bsv20 = false) => withRetry(() => request(
+        `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent` +
+        `?limit=${ORDINALS_PAGE}&offset=${offset}` + (bsv20 ? '&bsv20=true' : '')), `Ordinal indexer lookup for ${a}`),
       bsv20Balance: (a) => withRetry(() => request(`https://ordinals.gorillapool.io/api/bsv20/${encodeURIComponent(a)}/balance`), `BSV-20 lookup for ${a}`),
     },
   };
@@ -747,25 +754,45 @@
       return !!(data.insc || data.bsv20 || data.lock);
     },
 
-    // Set of "txid:vout" for every protected UTXO at addr. Throws on indexer error.
+    // Set of "txid:vout" for every protected UTXO at addr: every page of the
+    // plain listing (ordinals / locks) and every output of the BSV-20 listing.
+    // Throws on indexer error or an incomplete scan.
     async protectedSet(address) {
-      let raw;
-      try {
-        raw = await Net.gorillapool.unspent(address);
-      } catch (e) {
-        throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build a transaction — cannot verify these UTXOs are safe to spend.`);
-      }
-      if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned an unexpected shape — refusing to build.');
       const set = new Set();
-      for (const txo of raw) if (Tokens.isProtected(txo)) set.add(`${txo.txid}:${txo.vout}`);
+      const outpointOf = (t) => {
+        if (typeof t.txid === 'string' && Number.isInteger(t.vout)) return `${t.txid}:${t.vout}`;
+        const m = typeof t.outpoint === 'string' && t.outpoint.match(/^([0-9a-f]{64})_(\d+)$/);
+        if (m) return `${m[1]}:${m[2]}`;
+        throw new Error('Ordinal/token indexer returned an output without an outpoint — refusing to build.');
+      };
+      for (const bsv20 of [false, true]) {
+        for (let page = 0, offset = 0; ; page++) {
+          if (page >= ORDINALS_MAX_PAGES) {
+            throw new Error('Too many ordinal/token outputs to check completely. Refusing to build — cannot verify these UTXOs are safe to spend.');
+          }
+          let raw;
+          try {
+            raw = await Net.gorillapool.unspent(address, offset, bsv20);
+          } catch (e) {
+            throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build a transaction — cannot verify these UTXOs are safe to spend.`);
+          }
+          if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned an unexpected shape — refusing to build.');
+          // Everything the BSV-20 listing returns is a token output.
+          for (const txo of raw) if (bsv20 || Tokens.isProtected(txo)) set.add(outpointOf(txo));
+          if (raw.length < ORDINALS_PAGE) break;
+          offset += raw.length;
+        }
+      }
       return set;
     },
 
+    // Every 1-sat output is held back too: that is where ordinals live, and an
+    // indexer can lag behind an ordinal that has just arrived.
     filter(utxos, protectedSet) {
       const spendable = [];
       let protectedCount = 0;
       for (const u of utxos) {
-        if (protectedSet.has(`${u.txid}:${u.vout}`)) protectedCount++;
+        if (u.satoshis === 1 || protectedSet.has(`${u.txid}:${u.vout}`)) protectedCount++;
         else spendable.push(u);
       }
       return { spendable, protectedCount };
@@ -894,7 +921,7 @@
     return { spendable, protectedCount };
   }
 
-  const shieldNote = (n) => n ? ` 🛡 ${n} ordinal/token UTXO(s) excluded and left untouched.` : '';
+  const shieldNote = (n) => n ? ` 🛡 ${n} ordinal/token or 1-sat UTXO(s) excluded and left untouched.` : '';
 
   async function buildSendTransaction() {
     if (!state.wallet) throw new Error('Load a wallet first.');
