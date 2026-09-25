@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-f1ebwLKsjwp74+ADFAfYLm1XQvWcDz1573JfUAey8jo=' https://cdn.jsdelivr.net;
+    script-src 'sha256-Mzt+5kETWnDm3hnYF3ojpyHh17guU5OGxbNmILHC8mg=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1478,6 +1478,20 @@ const Status = {
 // All user-driven mutations go through Actions.* — each returns void, updates
 // state via setState, and surfaces errors via Status.error. Render functions
 // wire these as onclick handlers via el(...).
+// Bumped whenever the open wallet goes away or changes (lock, wipe, unlock,
+// create/import), so async work started for one wallet can tell it is stale
+// and must not touch state or keep spending.
+let walletSession = 0;
+// Everything derived from the open wallet: its keys, recovered keys, balances
+// and drafts. Cleared together so nothing outlives the wallet it came from.
+const clearedWalletState = () => ({
+  wallet: null, derived: null, balance: null, history: [], recovery: null,
+  tokens: null, draftTx: null, draft: {}, busy: false,
+});
+// Address-scoped results (balance, history, tokens, a send draft) also go
+// stale when the derivation path changes, which replaces state.derived.
+const stillCurrent = (session, derived) => session === walletSession && state.derived === derived;
+
 const Actions = {
   // ---- view navigation
   gotoLanding()  { Status.clear(); setState({ view: 'landing', step: null, draft: {} }); },
@@ -1556,20 +1570,28 @@ const Actions = {
     const passphrase = (typeof bip39Pass === 'string' ? bip39Pass : state.draft.passphrase) || '';
 
     setState({ busy: true });
+    const session = walletSession;
     try {
       await Vault.save(mnemonic, pw1, passphrase);
+      if (session !== walletSession) {
+        // Wiped while saving: the save may have landed after the wipe, so wipe again.
+        if (!state.vaultExists) { Vault.wipe(); Status.info('Vault wiped while saving; nothing was kept.'); }
+        return;
+      }
       // Open the wallet straight from RAM rather than round-tripping.
       const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      walletSession++;
       setState({
+        ...clearedWalletState(),
         wallet, locked: false, vaultExists: true,
-        view: 'unlocked', step: null, draft: {},
-        busy: false,
+        view: 'unlocked', step: null,
       });
       Actions._rederive();
       const passNote = passphrase ? ' (BIP39 passphrase set)' : '';
       Status.info((origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.') + passNote);
       AutoLock.arm();
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Could not save vault: ${e.message}`);
     }
@@ -1579,16 +1601,21 @@ const Actions = {
   async unlock(password) {
     if (!password) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       const { mnemonic, passphrase } = await Vault.unlock(password);
+      if (session !== walletSession) return;   // locked or wiped while decrypting
       const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      walletSession++;
       setState({
-        wallet, locked: false, view: 'unlocked', step: null, busy: false,
+        ...clearedWalletState(),
+        wallet, locked: false, view: 'unlocked', step: null,
       });
       Actions._rederive();
       Status.info('Unlocked.');
       AutoLock.arm();
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message || 'Unlock failed.');
     }
@@ -1596,7 +1623,8 @@ const Actions = {
 
   // ---- lock / wipe
   lock() {
-    setState({ wallet: null, locked: true, view: 'landing', step: null, draft: {} });
+    walletSession++;
+    setState({ ...clearedWalletState(), locked: true, view: 'landing', step: null });
     AutoLock.disarm();
     Status.info('Locked.');
   },
@@ -1604,9 +1632,10 @@ const Actions = {
     const typed = prompt('Type DELETE to wipe the local vault. This cannot be undone.');
     if (typed !== 'DELETE') { Status.info('Wipe cancelled.'); return; }
     Vault.wipe();
+    walletSession++;
     setState({
-      wallet: null, locked: true, vaultExists: false,
-      view: 'landing', step: null, draft: {},
+      ...clearedWalletState(), locked: true, vaultExists: false,
+      view: 'landing', step: null,
     });
     Status.info('Vault wiped.');
   },
@@ -1687,8 +1716,11 @@ const Actions = {
   async refreshBalance() {
     if (!state.derived) { Status.error('No address derived.'); return; }
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const data = await Net.woc.balance(state.derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
         throw new Error('Unexpected balance response');
       }
@@ -1697,6 +1729,7 @@ const Actions = {
       // Refresh price if we don't have it yet (cheap fallback).
       if (state.price == null) Actions.fetchPrice();
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Balance fetch failed: ${e.message}`);
     }
@@ -1731,23 +1764,27 @@ const Actions = {
     if (sats < 546) { Status.error('Amount is below dust threshold (546 sats).'); return; }
 
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       // Fetch protected set FIRST. If the indexer is down we block entirely
       // (Tokens.protectedSet throws with a clear message); building anyway
       // could burn an NFT or destroy a token at this address.
-      const protectedSet = await Tokens.protectedSet(state.derived.address);
-      const raw = await Net.woc.unspent(state.derived.address);
-      const allUtxos = normalizeWocUtxos(raw, state.derived.address);
+      const protectedSet = await Tokens.protectedSet(derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
+      const raw = await Net.woc.unspent(derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
+      const allUtxos = normalizeWocUtxos(raw, derived.address);
       const { spendable, protectedCount } = Tokens.filter(allUtxos, protectedSet);
       if (spendable.length === 0) {
         throw new Error(protectedCount > 0
           ? `All ${protectedCount} UTXOs at this address carry ordinals or tokens (protected). Nothing safe to spend.`
           : 'No spendable UTXOs at this address.');
       }
-      const priv = bsv.PrivateKey.fromWIF(state.derived.wif);
+      const priv = bsv.PrivateKey.fromWIF(derived.wif);
       const draft = TxBuilder.send({
         utxos: spendable, toAddress: to, sats,
-        privateKey: priv, fromAddress: state.derived.address,
+        privateKey: priv, fromAddress: derived.address,
       });
       setState({
         draftTx: { ...draft, to, protectedCount, tx: undefined /* drop tx to keep state JSON-clean */ },
@@ -1755,6 +1792,7 @@ const Actions = {
       });
       Status.info(`Transaction built (${protectedCount} ordinal/token UTXOs protected). Review and confirm to broadcast.`);
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Build failed: ${e.message}`);
     }
@@ -1764,12 +1802,16 @@ const Actions = {
     const d = state.draftTx;
     if (!d || !d.hex) { Status.error('No draft transaction.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       const txid = await Net.woc.broadcast(d.hex);
       const cleanTxid = typeof txid === 'string' ? txid.trim().replace(/^"|"$/g, '') : String(txid);
-      setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
+      // The broadcast happened either way, so always report it; only the state
+      // belongs to the session that started it.
+      if (session === walletSession) setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
       Status.info(`Broadcast OK. Txid: ${cleanTxid}`);
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Broadcast failed: ${e.message}`);
     }
@@ -1778,14 +1820,17 @@ const Actions = {
   // ---- recovery scan + sweep
   async scanRecovery() {
     if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
+    const session = walletSession;
     setState({ busy: true, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
     try {
       const onProgress = (p) => {
+        if (session !== walletSession) return;
         if (p.stage === 'scanning') {
           setState({ recovery: { ...state.recovery, done: p.done, total: p.total } });
         }
       };
       const found = await Recovery.scan(state.wallet.root, state, { onProgress });
+      if (session !== walletSession) return;   // locked or switched: drop the results
       const totalSats = found.reduce((a, x) => a + x.totalSats, 0);
       setState({
         busy: false,
@@ -1793,6 +1838,7 @@ const Actions = {
       });
       Status.info(found.length === 0 ? 'Recovery scan complete — nothing found.' : `Found ${found.length} addresses with ${Fmt.sats(totalSats)} sats.`);
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Recovery scan failed: ${e.message}`);
     }
@@ -1835,15 +1881,21 @@ const Actions = {
   // Broadcast a previously-built sweep draft. Records per-path result so the
   // recovery row updates row-by-row.
   async _broadcastSweepDraft(draft) {
+    const session = walletSession;
     try {
       const txidRaw = await Net.woc.broadcast(draft.hex);
       const txid = typeof txidRaw === 'string' ? txidRaw.trim().replace(/^"|"$/g, '') : String(txidRaw);
+      if (session !== walletSession) {
+        Status.info(`A sweep started before the lock was broadcast: ${txid}`);
+        return { ok: true, txid };
+      }
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[draft.path] = { ok: true, txid };
       setState({ draft: { ...state.draft, swept } });
       Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${draft.fromAddress} → ${Fmt.shortHash(draft.to)}: ${txid}`);
       return { ok: true, txid };
     } catch (e) {
+      if (session !== walletSession) return { ok: false, error: e.message };
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[draft.path] = { ok: false, error: e.message };
       setState({ draft: { ...state.draft, swept } });
@@ -1859,14 +1911,17 @@ const Actions = {
   async previewSweep(item) {
     Status.clear();
     setState({ busy: true });
+    const session = walletSession;
     try {
       const draft = await Actions._buildSweepDraft(item, Actions._recoveryDest());
+      if (session !== walletSession) return;   // wallet locked or switched meanwhile
       setState({
         busy: false,
         draft: { ...state.draft, sweepPreview: draft },
       });
       Status.info('Sweep transaction built. Review and confirm to broadcast.');
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message);
     }
@@ -1880,11 +1935,14 @@ const Actions = {
     const d = state.draft && state.draft.sweepPreview;
     if (!d) { Status.error('No sweep to confirm.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       await Actions._broadcastSweepDraft(d);
     } finally {
-      const next = { ...state.draft }; delete next.sweepPreview;
-      setState({ busy: false, draft: next });
+      if (session === walletSession) {
+        const next = { ...state.draft }; delete next.sweepPreview;
+        setState({ busy: false, draft: next });
+      }
     }
   },
 
@@ -1905,11 +1963,14 @@ const Actions = {
     if (pending.length === 0) { Status.info('All items already swept.'); return; }
     if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address). No per-item preview — use individual Sweep buttons for that.`)) return;
 
+    const session = walletSession;
     setState({ busy: true });
     let ok = 0, fail = 0;
     for (const item of pending) {
+      if (session !== walletSession) break;
       try {
         const draft = await Actions._buildSweepDraft(item, destAddress);
+        if (session !== walletSession) break;   // locked while building: broadcast nothing more
         const r = await Actions._broadcastSweepDraft(draft);
         if (r.ok) ok++; else fail++;
       } catch (e) {
@@ -1920,6 +1981,10 @@ const Actions = {
         fail++;
       }
     }
+    if (session !== walletSession) {
+      Status.info(`Sweep-all stopped because the wallet was locked: ${ok} broadcast, ${fail} failed before that.`);
+      return;
+    }
     setState({ busy: false });
     Status.info(`Sweep-all complete: ${ok} ok, ${fail} failed.`);
   },
@@ -1928,8 +1993,10 @@ const Actions = {
   async exportMnemonic(pw) {
     if (!pw) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       const { mnemonic, passphrase } = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
+      if (session !== walletSession) return;   // locked meanwhile: never reveal into a locked UI
       setState({ busy: false, draft: {
         ...state.draft,
         exportedMnemonic: mnemonic,
@@ -1937,6 +2004,7 @@ const Actions = {
       }});
       Status.info('Mnemonic revealed. Hide when done.');
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message || 'Wrong password.');
     }
@@ -1965,8 +2033,11 @@ const Actions = {
   async loadHistory() {
     if (!state.derived) { Status.error('No address derived.'); return; }
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const data = await Net.woc.history(state.derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (!Array.isArray(data)) throw new Error('Unexpected history response');
       // Cap render at 100 most recent so the panel doesn't choke on busy
       // addresses; WoC returns oldest-first, so reverse + slice.
@@ -1974,6 +2045,7 @@ const Actions = {
       setState({ history: items, busy: false });
       Status.info(items.length === 0 ? 'No transactions on this address.' : `${items.length} tx loaded.`);
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`History fetch failed: ${e.message}`);
     }
@@ -1988,11 +2060,14 @@ const Actions = {
     if (!state.derived) { Status.error('No address derived.'); return; }
     const addr = state.derived.address;
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const [rawTxos, rawBal] = await Promise.all([
         Net.gorillapool.unspent(addr),
         Net.gorillapool.bsv20Balance(addr).catch(() => []),  // bsv20 endpoint is allowed to noop
       ]);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (!Array.isArray(rawTxos)) throw new Error('Indexer returned unexpected shape.');
       const ordinals = rawTxos.filter(Tokens.isProtected).map(Tokens.describeOrdinal);
       // Normalize BSV-20 balance shape: array of { sym, dec, id, all: { confirmed }}
@@ -2015,6 +2090,7 @@ const Actions = {
       if (bsv20.length)    parts.push(`${bsv20.length} BSV-20 token${bsv20.length === 1 ? '' : 's'}`);
       Status.info(parts.length ? `Found ${parts.join(' + ')} at this address.` : 'No ordinals or BSV-20 tokens at this address.');
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Token lookup failed: ${e.message}`);
     }
