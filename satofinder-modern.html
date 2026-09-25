@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-h5K3mUgbVUTUe0yKQXMTvbA22Ktk5yJ+y0xFp4Dk9W0=' https://cdn.jsdelivr.net;
+    script-src 'sha256-Q6Z0NlVDHg2VSumo3mhsd2dTdEoXfxrtMOJIaM+hnyk=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -495,7 +495,8 @@
   // ===========================================================================
 
   const SATS_PER_BSV = 100_000_000;
-  const PBKDF2_ITER = 310_000;            // OWASP 2023 minimum for PBKDF2-SHA256
+  const PBKDF2_ITER = 600_000;            // OWASP 2023 recommendation for PBKDF2-SHA256 (new vaults)
+  const PBKDF2_ITER_LEGACY = 310_000;     // what a vault without a recorded count was saved with
   const VAULT_FORMAT = 'satofinder-aes-gcm-v2';
   const LS_SETTINGS = 'satofinder-modern-settings';
   const LS_VAULT = 'satofinder-modern-vault';
@@ -1060,7 +1061,7 @@
 
   async function decryptVault(payload, password) {
     if (payload?.format !== VAULT_FORMAT) throw new Error('Unsupported or unrecognized backup format.');
-    const iterations = safeInt(payload.iterations, PBKDF2_ITER);
+    const iterations = safeInt(payload.iterations, PBKDF2_ITER_LEGACY);
     const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
     const key = await crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt: b64.decode(payload.salt), iterations, hash: 'SHA-256' },

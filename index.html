@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-KUH0luW/EWqi1CnKz/GsbUu0/3cb8P5fRJ7q5aSrJ1Q=' https://cdn.jsdelivr.net;
+    script-src 'sha256-Yu1QZrsoBA1XsAGKr3FF33F8dLuxeWJfGjpd9hAOaik=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -176,7 +176,8 @@ const PRESETS = Object.freeze({
 const DEFAULT_FEE_PER_KB = 100; // sat/KB. User-adjustable (Prefs.feePerKb) so a
                                 // network fee-floor change needs no redeploy.
 const MAX_FEE_PER_KB = 100000;  // sanity ceiling on user input (0.001 BSV/KB)
-const PBKDF2_ITER = 310000;     // OWASP 2023 minimum for PBKDF2-SHA256
+const PBKDF2_ITER = 600000;     // OWASP 2023 recommendation for PBKDF2-SHA256 (new vaults)
+const PBKDF2_ITER_LEGACY = 310000;  // what a vault without a recorded count was saved with
 const AUTOLOCK_MS = 10 * 60 * 1000;
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
 const BITAILS_BATCH = 20;       // per-request address count
@@ -237,7 +238,7 @@ const Crypto = {
     const salt = Crypto.b64dec(blob.salt);
     const iv   = Crypto.b64dec(blob.iv);
     const ct   = Crypto.b64dec(blob.ct);
-    const key  = await Crypto.deriveKey(password, salt, blob.iter || PBKDF2_ITER);
+    const key  = await Crypto.deriveKey(password, salt, blob.iter || PBKDF2_ITER_LEGACY);
     let plain;
     try {
       plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
