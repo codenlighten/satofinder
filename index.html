@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-yze3rQVlfEZkBQPa+VdQlO/l9CpSSoEts3mWpVTd0O4=' https://cdn.jsdelivr.net;
+    script-src 'sha256-1KNYbSr/VdHBLRojN334n1NuGaW0GGdD1goYOfu2DQ0=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -188,6 +188,11 @@ const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
 const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 const VAULT_KEY = 'satofinder.vault.v1';
+// Limits for a backup file being restored. A real one is about 1 KB; the
+// iteration bounds keep a crafted file from forcing a weak or an endless KDF.
+const BACKUP_MAX_BYTES = 64 * 1024;
+const BACKUP_MIN_ITER = 100000;
+const BACKUP_MAX_ITER = 10000000;
 const PREFS_KEY = 'satofinder.prefs.v1';
 const TIPPING_ADDRESS = '139Gv2y2JcjCNdnJNS3kWGm36mjjespfQc';
 
@@ -278,6 +283,25 @@ const Vault = {
     if (!obj.mnemonic || typeof obj.mnemonic !== 'string') throw new Error('Vault payload corrupt');
     // Older (pre-2.1) vaults are missing the passphrase field — default to ''.
     return { mnemonic: obj.mnemonic, passphrase: typeof obj.passphrase === 'string' ? obj.passphrase : '' };
+  },
+  // Validate a downloaded backup file's text before any key derivation runs.
+  // Returns the encrypted blob; throws a readable error for anything else.
+  parseBackup(text) {
+    let blob;
+    try { blob = JSON.parse(text); } catch { throw new Error('This is not a SatoFinder backup file (not JSON).'); }
+    const isB64 = (x) => typeof x === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(x);
+    if (!blob || typeof blob !== 'object' || blob.v !== 1 || blob.kdf !== 'PBKDF2-SHA256') {
+      throw new Error('This is not a SatoFinder backup file (unknown format).');
+    }
+    if (!Number.isInteger(blob.iter) || blob.iter < BACKUP_MIN_ITER || blob.iter > BACKUP_MAX_ITER) {
+      throw new Error('This backup file has an invalid key-derivation setting.');
+    }
+    if (!isB64(blob.salt) || !isB64(blob.iv) || !isB64(blob.ct)
+        || Crypto.b64dec(blob.salt).length !== 16 || Crypto.b64dec(blob.iv).length !== 12
+        || Crypto.b64dec(blob.ct).length < 17) {
+      throw new Error('This backup file is damaged or incomplete.');
+    }
+    return { v: 1, kdf: blob.kdf, iter: blob.iter, salt: blob.salt, iv: blob.iv, ct: blob.ct };
   },
   wipe() {
     localStorage.removeItem(VAULT_KEY);
@@ -734,6 +758,7 @@ function renderApp(s) {
     case 'create':   view = renderCreate(s);  break;
     case 'import':   view = renderImport(s);  break;
     case 'unlock':   view = renderUnlock(s);  break;
+    case 'restore':  view = renderRestore(s); break;
     case 'unlocked': view = renderUnlockedPlaceholder(s); break;
     default:         view = renderLanding(s);
   }
@@ -765,6 +790,11 @@ function renderLanding(s) {
       el('h2', {}, 'Import existing mnemonic'),
       el('button', { onclick: () => Actions.startImport() }, 'Import 12/24-word phrase'),
     ]),
+    el('div', { class: 'panel' }, [
+      el('h2', {}, 'Restore encrypted backup'),
+      el('p', { class: 'muted' }, 'Open a file saved with "Download encrypted backup", using the password it was made with.'),
+      el('button', { onclick: () => Actions.gotoRestore() }, 'Restore from backup file'),
+    ]),
     haveVault ? el('div', { class: 'panel' }, [
       el('h2', {}, 'Danger zone'),
       el('p', { class: 'muted' }, 'If you have forgotten your password, you must wipe the local vault and re-import the mnemonic. There is no password recovery — the encrypted blob is the only source of truth.'),
@@ -783,6 +813,34 @@ function renderImport(s) {
   if (s.step === 'enter') return renderImportEnter(s);
   if (s.step === 'password') return renderSetPassword(s, 'import');
   return renderLanding(s);
+}
+function renderRestore(s) {
+  const fileId = 'restore-file', passId = 'pw-restore', replaceId = 'restore-replace';
+  const replacing = Vault.exists();
+  const submit = () => Actions.restoreBackup(
+    $(fileId).files && $(fileId).files[0], $(passId).value, replacing ? $(replaceId).value : '');
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Restore encrypted backup'),
+    el('p', { class: 'muted' }, 'Choose the backup file and enter the password it was made with. The file never leaves this browser; its recovery phrase is re-encrypted into this device\'s vault with the same password.'),
+    el('input', { id: fileId, type: 'file', accept: 'application/json,.json' }),
+    el('input', { id: passId, type: 'password', placeholder: 'Backup password', autocomplete: 'current-password',
+                  onkeydown: (e) => { if (e.key === 'Enter') submit(); } }),
+    replacing
+      ? el('div', { style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' }, [
+          el('div', { class: 'err', style: 'font-size:12px;margin-bottom:8px' },
+            'A wallet vault already exists on this device. Restoring will permanently replace it. ' +
+            'Unless you have its mnemonic written down, download its encrypted backup first.'),
+          el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download backup of the existing vault'),
+          el('input', { id: replaceId, type: 'text', placeholder: 'Type REPLACE to overwrite the existing vault',
+                        autocomplete: 'off', spellcheck: 'false', style: 'margin-top:8px' }),
+        ])
+      : null,
+    el('div', { class: 'row', style: 'margin-top:16px' }, [
+      el('button', { onclick: () => Actions.gotoLanding() }, 'Back'),
+      el('button', { class: 'primary', disabled: s.busy, onclick: submit },
+        s.busy ? 'Restoring…' : (replacing ? 'Replace vault & unlock' : 'Restore & unlock')),
+    ]),
+  ]);
 }
 function renderUnlock(s) {
   const passId = 'pw-unlock';
@@ -1577,6 +1635,52 @@ const Actions = {
   // ---- view navigation
   gotoLanding()  { Status.clear(); setState({ view: 'landing', step: null, draft: {} }); },
   gotoUnlock()   { Status.clear(); setState({ view: 'unlock',  step: null }); },
+  gotoRestore()  { Status.clear(); setState({ view: 'restore', step: null }); },
+
+  // Restore a file made by "Download encrypted backup". The file is only read:
+  // its phrase is decrypted with the password, checked, and saved as a fresh
+  // vault at the current iteration count, then the wallet opens.
+  async restoreBackup(file, password, replaceTyped) {
+    if (!file) { Status.error('Choose the backup file first.'); return; }
+    if (!password) { Status.error('Enter the password this backup was made with.'); return; }
+    if (file.size > BACKUP_MAX_BYTES) { Status.error('This file is too large to be a SatoFinder backup.'); return; }
+    if (Vault.exists() && (replaceTyped || '').trim() !== 'REPLACE') {
+      Status.error('A vault already exists on this device. Type REPLACE to overwrite it.');
+      return;
+    }
+    setState({ busy: true });
+    const session = walletSession;
+    try {
+      const blob = Vault.parseBackup(await file.text());
+      const payload = JSON.parse(await Crypto.decrypt(password, blob));   // throws 'Wrong password'
+      if (session !== walletSession) return;
+      const mnemonic = payload && typeof payload.mnemonic === 'string' ? payload.mnemonic.trim() : '';
+      const passphrase = payload && typeof payload.passphrase === 'string' ? payload.passphrase : '';
+      // isValid throws, rather than returning false, for some malformed input.
+      let validPhrase = false;
+      try { validPhrase = bsv.Mnemonic.isValid(mnemonic); } catch { validPhrase = false; }
+      if (!validPhrase) throw new Error('The backup decrypted, but it does not hold a valid recovery phrase.');
+      await Vault.save(mnemonic, password, passphrase);
+      if (session !== walletSession) {
+        // Wiped while saving: the save may have landed after the wipe, so wipe again.
+        if (!state.vaultExists) { Vault.wipe(); Status.info('Vault wiped while restoring; nothing was kept.'); }
+        return;
+      }
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      walletSession++;
+      setState({
+        ...clearedWalletState(),
+        wallet, locked: false, vaultExists: true, view: 'unlocked', step: null,
+      });
+      Actions._rederive();
+      Status.info('Backup restored and unlocked.' + (passphrase ? ' (BIP39 passphrase restored)' : ''));
+      AutoLock.arm();
+    } catch (e) {
+      if (session !== walletSession) return;
+      setState({ busy: false });
+      Status.error(e.message || 'Could not restore this backup.');
+    }
+  },
   gotoShow()     { setState({ view: 'create', step: 'show' }); },
   gotoConfirm()  { setState({ view: 'create', step: 'confirm' }); },
 

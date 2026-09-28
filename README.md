@@ -22,7 +22,8 @@ python3 -m http.server 8000     # any static server works
 ## How it protects funds
 
 - **Vault.** The mnemonic and optional BIP39 passphrase are encrypted with AES-GCM under a key from PBKDF2-SHA256 (600,000 iterations for new vaults; older vaults keep the count they were saved with), then stored in `localStorage`. They never leave the browser. There is no password recovery: if you forget the password, wipe the vault and re-import the mnemonic.
-- **Replacing a vault** asks you to type `REPLACE`, and offers to download the existing encrypted vault first.
+- **Backups.** "Download encrypted backup" saves the vault file; "Restore from backup file" reads one back (validated before any key derivation, then re-encrypted with a fresh salt at the current iteration count).
+- **Replacing a vault** by create, import or restore asks you to type `REPLACE`, and offers to download the existing encrypted vault first.
 - **Locking** happens after 10 minutes idle, 60 seconds after the tab is hidden (unless you come back first), or on demand. In the main wallet it clears the keys, recovery results, drafts and balances, and requests still in flight when the wallet locks are discarded when they return.
 - **Ordinals and tokens are never spent as plain sats.** Before building any Send or sweep, every page of GorillaPool's unspent listing is checked, both plain and BSV-20, and each ordinal, BSV-20 and lock output is excluded. Every 1-sat output is also held back, in case the indexer hasn't seen a new ordinal yet. If the indexer is unreachable, or the listing can't be read completely, nothing is built.
 - **You confirm before broadcasting.** Nothing is broadcast until you confirm a built, signed transaction. The confirmation shows its destination, amount and fee, and the raw hex is there to inspect.
