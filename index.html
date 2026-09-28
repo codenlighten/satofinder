@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-0M+2HDjdHERyi7ZV0DKlq1PXrFCJ8fyPhevKt8rLw2Q=' https://cdn.jsdelivr.net;
+    script-src 'sha256-3+IXqvabFxPOu5OWxxmqVBCRvPGkZMuyPU/ebikOL8c=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1230,15 +1230,16 @@ function renderRecoveryPanel(s) {
     ? s.draft.recoveryDest
     : (d ? d.address : '');
   const destId = 'recovery-dest';
-  // Changing the destination discards a prepared sweep-all plan: its
-  // transactions are already signed to the old address.
+  // Changing the destination discards a prepared sweep-all plan and an open
+  // preview: their transactions are already signed to the old address.
   const setDest = () => {
-    const next = { ...state.draft, recoveryDest: $(destId).value.trim() }; delete next.sweepAllPlan;
+    const next = { ...state.draft, recoveryDest: $(destId).value.trim() };
+    delete next.sweepAllPlan; delete next.sweepPreview;
     setState({ draft: next });
   };
   const resetDest = () => {
     if (!d) return;
-    const next = { ...state.draft }; delete next.recoveryDest; delete next.sweepAllPlan;
+    const next = { ...state.draft }; delete next.recoveryDest; delete next.sweepAllPlan; delete next.sweepPreview;
     setState({ draft: next });
   };
   const plan = s.draft && s.draft.sweepAllPlan;
@@ -1361,7 +1362,8 @@ function renderRecoveryRow(s, item, sweepResult) {
             sweepResult.ok ? `swept: ${Fmt.shortHash(sweepResult.txid)}` : `error: ${sweepResult.error}`)
         : isPreviewing
           ? null   // preview block has its own Confirm/Cancel
-          : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy || !!preview,
+          : el('button', { class: 'primary', style: 'flex:0 0 auto',
+                           disabled: s.busy || !!preview || !!(s.draft && s.draft.sweepAllPlan),
                            onclick: () => Actions.previewSweep(item) },
               preview ? 'Preview busy' : 'Preview'),
     ]),
@@ -2119,6 +2121,13 @@ const Actions = {
       return { ok: true, txid };
     } catch (e) {
       if (session !== walletSession) return { ok: false, error: e.message };
+      const prior = state.draft && state.draft.swept && state.draft.swept[draft.path];
+      if (prior && prior.ok) {
+        // Already swept successfully (for example a re-sent identical
+        // transaction the node reports as known): keep the recorded success.
+        Status.error(`Sweep broadcast failed, but ${draft.fromAddress} was already swept: ${e.message}`);
+        return { ok: true, txid: prior.txid };
+      }
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[draft.path] = { ok: false, error: e.message };
       setState({ draft: { ...state.draft, swept } });
@@ -2132,6 +2141,8 @@ const Actions = {
   // inspector + Confirm/Cancel. User can copy the hex to WhatsOnChain to
   // verify, then click Confirm to actually send.
   async previewSweep(item) {
+    if (state.busy) return;
+    if (state.draft && state.draft.sweepAllPlan) { Status.error('Cancel the prepared sweep of all addresses first.'); return; }
     Status.clear();
     setState({ busy: true });
     const session = walletSession;
@@ -2155,8 +2166,18 @@ const Actions = {
     Status.info('Sweep cancelled.');
   },
   async confirmSweepPreview() {
+    if (state.busy) return;
     const d = state.draft && state.draft.sweepPreview;
     if (!d) { Status.error('No sweep to confirm.'); return; }
+    const dropPreview = () => { const next = { ...state.draft }; delete next.sweepPreview; setState({ draft: next }); };
+    // Signed to the destination at preview time; refuse if it has changed since.
+    if (d.to !== Actions._recoveryDest()) {
+      dropPreview();
+      Status.error('The destination changed after this sweep was built. Preview it again.');
+      return;
+    }
+    const done = state.draft.swept && state.draft.swept[d.path];
+    if (done && done.ok) { dropPreview(); Status.info('This address was already swept.'); return; }
     setState({ busy: true });
     const session = walletSession;
     try {
@@ -2181,6 +2202,7 @@ const Actions = {
   // exactly those drafts. A re-scan, a destination change or a lock discards
   // the prepared plan.
   async prepareSweepAll() {
+    if (state.busy) return;
     const rec = state.recovery;
     if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
     const destAddress = Actions._recoveryDest();
@@ -2192,7 +2214,9 @@ const Actions = {
 
     Status.clear();
     const session = walletSession;
-    setState({ busy: true });
+    // Only one sweep path at a time: a prepared plan replaces an open preview.
+    const draftNoPreview = { ...state.draft }; delete draftNoPreview.sweepPreview;
+    setState({ busy: true, draft: draftNoPreview });
     const drafts = [];
     const errors = [];
     for (const item of pending) {
@@ -2219,6 +2243,7 @@ const Actions = {
     Status.info('Sweep-all cancelled. Nothing was broadcast.');
   },
   async confirmSweepAll() {
+    if (state.busy) return;
     const plan = state.draft && state.draft.sweepAllPlan;
     if (!plan || plan.drafts.length === 0) { Status.error('Nothing prepared to broadcast.'); return; }
     if (Actions._recoveryDest() !== plan.dest) {
