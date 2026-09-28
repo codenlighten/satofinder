@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-kbrySZWJr/VsVeVi5L2Gz8JHt1Bdf0XwDf8uA/wLGXU=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-FsBSaAypfYfu/GIZWL+9ALiBhhtgYxqHW6fgb0Y9WMM=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -451,6 +451,11 @@
               <div class="field"><label for="backupPassword2">Confirm password</label><input id="backupPassword2" type="password" autocomplete="new-password" placeholder="Repeat password"></div>
             </div>
             <div class="actions"><button class="btn btn-primary" id="saveEncryptedBtn">Save encrypted in browser</button><button class="btn btn-blue" id="downloadEncryptedBtn">Download encrypted backup</button><button class="btn btn-danger" id="downloadPlainBtn">Download plain JSON</button></div>
+            <div id="replaceVaultBox" hidden>
+              <p class="mini" style="margin-top:12px"><b>This browser already holds a backup of a different wallet</b> (or one saved with another password). Saving will permanently replace it. Unless you have that wallet's recovery phrase written down, download the existing backup first.</p>
+              <div class="actions"><button class="btn btn-ghost" id="downloadStoredVaultBtn">Download the existing browser backup</button></div>
+              <div class="field"><label for="replaceVaultConfirm">Type REPLACE to overwrite it</label><input id="replaceVaultConfirm" type="text" autocomplete="off" spellcheck="false" placeholder="REPLACE"></div>
+            </div>
             <div class="divider"></div>
             <div class="field"><label for="restoreFile">Restore encrypted backup file</label><input id="restoreFile" type="file" accept="application/json,.json"></div>
             <div class="actions"><button class="btn btn-green" id="restoreFileBtn">Restore file</button><button class="btn btn-ghost" id="restoreLocalBtn">Restore browser backup</button><button class="btn btn-danger" id="deleteLocalBtn">Delete browser backup</button></div>
@@ -1064,11 +1069,13 @@
     return { mnemonic, passphrase, path, preset, mode };
   }
 
-  async function encryptVault(password) {
+  // The record is read when the call starts, before the slow key derivation,
+  // so a wallet change meanwhile can't swap what gets encrypted.
+  async function encryptVault(password, record = seedRecord()) {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await vaultKey(password, salt);
-    const plaintext = new TextEncoder().encode(JSON.stringify(seedRecord()));
+    const plaintext = new TextEncoder().encode(JSON.stringify(record));
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
     return {
       format: VAULT_FORMAT, kdf: 'PBKDF2-SHA256', iterations: PBKDF2_ITER,
@@ -1606,11 +1613,45 @@
     setStatus('historyStatus', `History search complete. ${entries.length} unique transaction(s) found.`, entries.length ? 'success' : 'warn');
   });
 
+  // Saving over an existing browser backup is only automatic when that backup
+  // is this same wallet under this password (e.g. re-saving). Anything else —
+  // another wallet, or a password that doesn't open it — needs a typed REPLACE,
+  // with the existing backup offered for download first.
+  async function storedVaultIsThisWallet(raw, password, record) {
+    try {
+      const stored = await decryptVault(JSON.parse(raw), password);
+      return stored.mnemonic === record.mnemonic && (stored.passphrase || '') === (record.passphrase || '');
+    } catch {
+      return false;
+    }
+  }
   action('saveEncryptedBtn', 'backupStatus', async () => {
     const password = requireBackupPassword();
-    localStorage.setItem(LS_VAULT, JSON.stringify(await encryptVault(password)));
+    const record = seedRecord();
+    const epoch = walletEpoch;
+    const existing = localStorage.getItem(LS_VAULT);
+    if (existing && !(await storedVaultIsThisWallet(existing, password, record))) {
+      if (epochChanged(epoch)) return;
+      $('replaceVaultBox').hidden = false;
+      if ($('replaceVaultConfirm').value.trim() !== 'REPLACE') {
+        throw new Error('A different backup is saved in this browser. Download it first if you need it, then type REPLACE to overwrite it.');
+      }
+    }
+    const vault = await encryptVault(password, record);
+    // Locked or switched meanwhile, or the stored backup changed since the check.
+    if (epochChanged(epoch) || localStorage.getItem(LS_VAULT) !== existing) return;
+    localStorage.setItem(LS_VAULT, JSON.stringify(vault));
+    $('replaceVaultConfirm').value = '';
+    $('replaceVaultBox').hidden = true;
     syncNoBackupWarning();
     setStatus('backupStatus', 'Encrypted wallet backup saved in this browser. Auto-lock can now be undone with this password.', 'success');
+  });
+
+  action('downloadStoredVaultBtn', 'backupStatus', async () => {
+    const raw = localStorage.getItem(LS_VAULT);
+    if (!raw) throw new Error('There is no browser backup to download.');
+    downloadJson(`satofinder-encrypted-existing-${Date.now()}.json`, JSON.parse(raw));
+    setStatus('backupStatus', 'Existing browser backup downloaded. It opens with the password it was saved with.', 'success');
   });
 
   action('downloadEncryptedBtn', 'backupStatus', async () => {
