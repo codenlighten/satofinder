@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-srAaqVA2FMQNsw57aSVcn6zXMyrOMAffSBKZVs/oNuo=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-xF0csOEV7xMD5RaXHvsXoi5XvsuKIwEf8YggxNzHAkQ=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1091,9 +1091,29 @@
     };
   }
 
-  async function decryptVault(payload, password) {
+  // Limits for a backup being opened. A real one is about 1 KB; the iteration
+  // bounds keep a crafted file from forcing a weak or an endless KDF, and all
+  // of this is checked before any key derivation runs.
+  const BACKUP_MAX_BYTES = 64 * 1024;
+  const BACKUP_MIN_ITER = 100000;
+  const BACKUP_MAX_ITER = 10000000;
+  function checkVaultPayload(payload) {
     if (payload?.format !== VAULT_FORMAT) throw new Error('Unsupported or unrecognized backup format.');
-    const iterations = safeInt(payload.iterations, PBKDF2_ITER_LEGACY);
+    if (payload.kdf !== undefined && payload.kdf !== 'PBKDF2-SHA256') throw new Error('Unsupported backup key derivation.');
+    // Older backups may not record a count; they were made at the legacy one.
+    const iterations = payload.iterations === undefined ? PBKDF2_ITER_LEGACY : payload.iterations;
+    if (!Number.isInteger(iterations) || iterations < BACKUP_MIN_ITER || iterations > BACKUP_MAX_ITER) {
+      throw new Error('This backup has an invalid key-derivation setting.');
+    }
+    const bytes = (v) => { try { return typeof v === 'string' ? b64.decode(v).length : -1; } catch { return -1; } };
+    if (bytes(payload.salt) !== 16 || bytes(payload.iv) !== 12 || bytes(payload.ciphertext) < 17) {
+      throw new Error('This backup is damaged or incomplete.');
+    }
+    return iterations;
+  }
+
+  async function decryptVault(payload, password) {
+    const iterations = checkVaultPayload(payload);
     const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
     const key = await crypto.subtle.deriveKey(
       { name: 'PBKDF2', salt: b64.decode(payload.salt), iterations, hash: 'SHA-256' },
@@ -1800,6 +1820,9 @@
 
   async function restore(payload, password) {
     const record = await decryptVault(payload, password);
+    if (!record || typeof record.mnemonic !== 'string' || typeof record.path !== 'string') {
+      throw new Error('The backup decrypted, but it does not hold a wallet record.');
+    }
     $('walletPreset').value = record.preset || 'custom';
     $('pathMode').value = record.mode || (record.path.startsWith("m/0'") ? '32' : '44');
     const parts = record.path.split('/');
@@ -1831,7 +1854,10 @@
     if (!file) throw new Error('Choose an encrypted backup file.');
     const password = $('backupPassword').value;
     if (!password) throw new Error('Enter the backup password.');
-    await restore(JSON.parse(await file.text()), password);
+    if (file.size > BACKUP_MAX_BYTES) throw new Error('This file is too large to be a SatoFinder backup.');
+    let payload;
+    try { payload = JSON.parse(await file.text()); } catch { throw new Error('This is not a SatoFinder backup file (not JSON).'); }
+    await restore(payload, password);
     setStatus('backupStatus', 'Encrypted backup file restored.', 'success');
   });
 
