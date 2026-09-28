@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-NN5WkLrmqVEwcpg3yjqfCWE1IXlyX+5A9On4Jsid00Q=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-JdGF/NXbzx7yJlonMphYlUfhGj9DObaPaIN5+SCRlzo=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -649,14 +649,16 @@
   // ===========================================================================
 
   // Serializes every call and spaces them by at least `interval` ms.
+  // performance.now() is monotonic: a wall-clock step back (NTP, a manual
+  // change) must not stall every request for the size of the step.
   function createLimiter(interval) {
     let tail = Promise.resolve();
-    let last = 0;
+    let last = -Infinity;
     return (fn) => {
       const run = async () => {
-        const wait = last + interval - Date.now();
-        if (wait > 0) await sleep(wait);
-        last = Date.now();
+        const wait = last + interval - performance.now();
+        if (wait > 0) await sleep(Math.min(wait, interval));
+        last = performance.now();
         return fn();
       };
       // Keep the chain alive even when a call rejects.
@@ -977,6 +979,11 @@
     const epoch = walletEpoch;
     const { spendable, protectedCount } = await spendableUtxos(state.wallet.address);
     if (epochChanged(epoch)) return;   // locked or switched while fetching
+    // Sign only what the fields show now: an edit made during the fetch
+    // would otherwise be ignored while the page shows the new values.
+    if ($('sendTo').value.trim() !== to || safeInt($('sendAmount').value, -1) !== amount) {
+      throw new Error('Recipient or amount changed while the transaction was being built. Build it again.');
+    }
     if (!spendable.length) {
       throw new Error(protectedCount
         ? `Every UTXO on this address holds an ordinal or token (${protectedCount}). There are no plain satoshis here to spend.`
@@ -1000,7 +1007,7 @@
     $('inspectTxLink').href = 'https://whatsonchain.com/broadcast';
     $('broadcastTxBtn').disabled = false;
     setStatus('sendStatus',
-      `Signed. Spending ${Fmt.sats(total)} sats across ${spendable.length} input(s); fee ${Fmt.sats(tx.getFee())} sats.${shieldNote(protectedCount)} Review the raw transaction before broadcasting.`,
+      `Signed: ${Fmt.sats(amount)} sats to ${to}. Spending ${Fmt.sats(total)} sats across ${spendable.length} input(s); fee ${Fmt.sats(tx.getFee())} sats.${shieldNote(protectedCount)} Review the raw transaction before broadcasting.`,
       'success');
   }
 
@@ -1336,10 +1343,12 @@
 
     idleExpired() { return Date.now() - Lock._lastActive >= LOCK_IDLE_MS; },
 
+    // Returns true when this call locked the wallet.
     bump() {
-      if (!state.wallet || Lock.engaged) return;
-      if (Lock.idleExpired()) { Lock.engage(`${LOCK_IDLE_MS / 60000} minutes of inactivity`); return; }
+      if (!state.wallet || Lock.engaged) return false;
+      if (Lock.idleExpired()) { Lock.engage(`${LOCK_IDLE_MS / 60000} minutes of inactivity`); return true; }
       Lock.armIdle();
+      return false;
     },
 
     onHidden() {
@@ -2053,9 +2062,11 @@
   // ===========================================================================
 
   // Any interaction is proof the user is still here; reset the idle timer.
-  // Passive: these fire constantly and must never block scrolling.
+  // Passive: these fire constantly and must never block scrolling. Capture
+  // phase, so an expired idle locks first, and the event that found it
+  // expired never reaches its target.
   for (const ev of ['mousemove', 'keydown', 'touchstart', 'focus', 'click', 'scroll']) {
-    window.addEventListener(ev, () => Lock.bump(), { passive: true });
+    window.addEventListener(ev, (e) => { if (Lock.bump()) e.stopPropagation(); }, { passive: true, capture: true });
   }
   document.addEventListener('visibilitychange', () =>
     document.visibilityState === 'hidden' ? Lock.onHidden() : Lock.onVisible());

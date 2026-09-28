@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-1NJJvIniUY6ik0zfdWBXmu3aCw0hyY4YtC6eFbrJ+Z0=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-d2Cf1ByFfhEbyoElhXHjK8sQ+xkV6wK2XPd2/lJWq1Y=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -2666,10 +2666,12 @@ const AutoLock = {
     if (document.visibilityState === 'hidden') AutoLock.onHidden();
   },
   idleExpired() { return Date.now() - AutoLock._lastActive >= AUTOLOCK_MS; },
+  // Returns true when this call locked the wallet.
   bump() {
-    if (state.locked) return;
-    if (AutoLock.idleExpired()) { Actions.lock(); return; }   // timer missed (sleep/freeze)
+    if (state.locked) return false;
+    if (AutoLock.idleExpired()) { Actions.lock(); return true; }   // timer missed (sleep/freeze)
     AutoLock.arm();
+    return false;
   },
   // Tab hidden: lock once the grace period passes, unless it comes back first.
   onHidden() {
@@ -2695,8 +2697,10 @@ function wireGlobalEvents() {
   // Reset idle timer on any interaction.
   // A secret clear that couldn't run while the page was unfocused runs now.
   window.addEventListener('focus', ClipboardGuard.onFocus);
-  for (const ev of ['mousemove','keydown','touchstart','focus']) {
-    window.addEventListener(ev, AutoLock.bump, { passive: true });
+  // Capture phase, so an expired idle locks first, and the event that found
+  // it expired never reaches its target.
+  for (const ev of ['mousemove','keydown','touchstart','focus','click']) {
+    window.addEventListener(ev, (e) => { if (AutoLock.bump()) e.stopPropagation(); }, { passive: true, capture: true });
   }
   // A hidden tab locks after HIDDEN_GRACE_MS, sooner than the idle timeout.
   document.addEventListener('visibilitychange', () => {
