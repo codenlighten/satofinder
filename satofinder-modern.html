@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-qAZiRhyhqFAa9hCE1XFPVN51wnEw0Ht88yk55UfXWjU=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-srAaqVA2FMQNsw57aSVcn6zXMyrOMAffSBKZVs/oNuo=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1411,15 +1411,41 @@
   }
 
   // Wraps a click handler: disables its button, routes errors to a status line.
+  // Wraps a click handler: disables its button while it runs and routes errors
+  // to a status line. A handler that returns KEEP_DISABLED leaves the button
+  // disabled (e.g. Broadcast after a successful broadcast).
+  const KEEP_DISABLED = Symbol('keep-disabled');
   function action(button, statusId, handler) {
     $(button).addEventListener('click', async () => {
       const btn = $(button);
       btn.disabled = true;
-      try { await handler(); }
+      let keep = false;
+      try { keep = (await handler()) === KEEP_DISABLED; }
       catch (e) { setStatus(statusId, e.message, 'error'); }
-      finally { btn.disabled = false; }
+      finally { btn.disabled = keep; }
     });
   }
+
+  // A built transaction is signed to the recipient, amount and destination
+  // it was built with; editing any of them throws it away.
+  function discardBuiltSend() {
+    if (!state.builtTx) return;
+    state.builtTx = null;
+    $('rawTx').value = '';
+    $('rawTxWrap').hidden = true;
+    $('broadcastTxBtn').disabled = true;
+    setStatus('sendStatus', 'Recipient or amount changed. Build the transaction again.', 'warn');
+  }
+  function discardBuiltRecovery() {
+    if (!state.recoveryTx) return;
+    state.recoveryTx = null;
+    $('recoveryRaw').value = '';
+    $('recoveryRawWrap').hidden = true;
+    $('broadcastRecoveryBtn').disabled = true;
+    setStatus('recoveryStatus', 'Destination changed. Build the recovery transaction again.', 'warn');
+  }
+  for (const id of ['sendTo', 'sendAmount']) $(id).addEventListener('input', discardBuiltSend);
+  $('recoveryDestination').addEventListener('input', discardBuiltRecovery);
 
   document.querySelectorAll('.nav button').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b === btn));
@@ -1593,9 +1619,10 @@
     setStatus('sendStatus', 'Broadcasting…', 'warn');
     const result = await Net.woc.broadcast(tx.toString());
     const txid = broadcastTxid(result, tx);
-    $('broadcastTxBtn').disabled = true;
+    if (state.builtTx === tx) state.builtTx = null;
     $('inspectTxLink').href = `${state.settings.explorerBase}${encodeURIComponent(tx.hash)}`;
     setStatus('sendStatus', `Broadcast accepted. TXID: ${txid}`, 'success');
+    return KEEP_DISABLED;
   });
 
   action('scanUtxosBtn', 'recoveryStatus', async () => {
@@ -1606,6 +1633,7 @@
     $('broadcastRecoveryBtn').disabled = true;
     $('recoveryRawWrap').hidden = true;
     state.recoveryUtxos = [];
+    state.recoveryTx = null;   // built from the previous scan's results
 
     const epoch = walletEpoch;
     const result = await scanForUtxos(count, chains, (step, steps, wallet) =>
@@ -1631,8 +1659,9 @@
     setStatus('recoveryStatus', 'Broadcasting…', 'warn');
     const result = await Net.woc.broadcast(tx.toString());
     const txid = broadcastTxid(result, tx);
-    $('broadcastRecoveryBtn').disabled = true;
+    if (state.recoveryTx === tx) state.recoveryTx = null;
     setStatus('recoveryStatus', `Recovery broadcast accepted. TXID: ${txid}`, 'success');
+    return KEEP_DISABLED;
   });
 
   action('loadTokensBtn', 'tokensStatus', async () => {
