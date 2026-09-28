@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-+lDyjNF8p6+jFaTWKagsWmOGB9fRyH3lEPkp04KoIZs=' https://cdn.jsdelivr.net;
+    script-src 'sha256-mKr38tEfMRN6CJ336bdSCvO4T2uhwD3GlnK1hmnUg28=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -2125,8 +2125,9 @@ const Actions = {
     if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
     const session = walletSession;
     // A re-scan replaces the found items, so prepared sweeps built from the old
-    // results are dropped.
-    const draft = { ...state.draft }; delete draft.sweepAllPlan; delete draft.sweepPreview;
+    // results are dropped, and so are the "swept" marks: new coins can arrive
+    // at an address swept earlier, and the fresh scan is what shows them.
+    const draft = { ...state.draft }; delete draft.sweepAllPlan; delete draft.sweepPreview; delete draft.swept;
     setState({ busy: true, draft, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
     try {
       const onProgress = (p) => {
