@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-/4TIDC7bhr0quM0Sr1WM3c8KIjad4xnIqlYVyqgZw4k=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-p31ykbMCkKTh4Zn+d1CkWhk2k17UUXQCS+iO4VLX3ZY=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -898,6 +898,11 @@
   // nothing from a wallet, least of all a key, reappears after a lock.
   let walletEpoch = 0;
   const epochChanged = (epoch) => epoch !== walletEpoch;
+  // A wallet load (import, restore, path change) takes a token when its action
+  // starts. Only the latest load may install a wallet, and not after a lock.
+  let walletLoadSeq = 0;
+  const beginWalletLoad = () => ({ seq: ++walletLoadSeq, epoch: walletEpoch });
+  const loadSuperseded = (t) => t.seq !== walletLoadSeq || epochChanged(t.epoch);
 
   function deriveAt(chain, index) {
     if (!state.mnemonic) throw new Error('Load a wallet first.');
@@ -1147,12 +1152,13 @@
   // 08. Wallet lifecycle
   // ===========================================================================
 
-  async function setWallet(wallet) {
-    const epoch = walletEpoch;
+  // Returns true if this wallet was installed; false if a lock or a later
+  // load superseded it while it was being prepared.
+  async function setWallet(wallet, token = beginWalletLoad()) {
     // A fingerprint over PUBLIC data only. Hashing the mnemonic would publish a
     // verification oracle for guessed phrases in the UI and in backups.
     wallet.fingerprint = await sha256Hex(`${wallet.address}|${wallet.path}`);
-    if (epochChanged(epoch)) return;   // locked or replaced while hashing
+    if (loadSuperseded(token)) return false;   // locked or replaced meanwhile
     walletEpoch++;
     const previousAddress = state.wallet ? state.wallet.address : null;
 
@@ -1200,6 +1206,7 @@
     const note = wallet.passphrase ? ' A BIP39 passphrase is applied.' : '';
     setStatus('walletStatus', `Wallet derived at ${wallet.path}.${note} Secrets are hidden.`, 'success');
     await refreshBalance();
+    return true;
   }
 
   const deriveCurrent = () => setWallet(Derive.wallet($('mnemonicInput').value, $('passphrase').value, currentPath()));
@@ -1220,12 +1227,16 @@
   // hidden input would be decoration.
   function wipeWallet() {
     walletEpoch++;
+    walletLoadSeq++;      // a load still in progress must not reinstall a wallet
     closePhraseCheck();   // a generated phrase not yet loaded goes too
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
       builtTx: null, recoveryTx: null, recoveryUtxos: [],
     });
-    for (const id of ['mnemonicInput', 'passphrase', 'sendFrom', 'sendTo', 'sendAmount', 'rawTx', 'recoveryRaw', 'recoveryDestination']) $(id).value = '';
+    // The backup password fields too: left filled, "Restore browser backup"
+    // would undo the lock with one click.
+    for (const id of ['mnemonicInput', 'passphrase', 'sendFrom', 'sendTo', 'sendAmount', 'rawTx', 'recoveryRaw', 'recoveryDestination',
+                      'backupPassword', 'backupPassword2', 'replaceVaultConfirm', 'restoreFile']) $(id).value = '';
     for (const id of ['mnemonicValue', 'privateKeyValue', 'publicKeyValue', 'addressValue', 'fingerprintValue']) $(id).textContent = '';
     $('keyGrid').hidden = true;
     $('rawTxWrap').hidden = true;
@@ -1238,6 +1249,7 @@
     setStatus('sendStatus', 'No transaction built.');
     setStatus('recoveryStatus', 'No recovery scan has run.');
     setStatus('tokensStatus', 'No token lookup has run.');
+    setStatus('historyStatus', 'No history search has run.');
     syncNoBackupWarning();
     updateBalanceUi();
   }
@@ -1566,7 +1578,7 @@
     if (!ok) throw new Error('Those words don\'t match the new phrase. Check your written copy.');
     const phrase = pendingPhrase.phrase;
     closePhraseCheck();
-    await setWallet(Derive.wallet(phrase, $('passphrase').value, currentPath()));
+    if (!(await setWallet(Derive.wallet(phrase, $('passphrase').value, currentPath())))) return;
     setStatus('walletStatus', 'New wallet loaded. Save an encrypted backup (Backup panel) so auto-lock can be undone with a password.', 'success');
   });
 
@@ -1792,6 +1804,7 @@
     // Locked or switched meanwhile, or the stored backup changed since the check.
     if (epochChanged(epoch) || localStorage.getItem(LS_VAULT) !== existing) return;
     localStorage.setItem(LS_VAULT, JSON.stringify(vault));
+    $('backupPassword').value = ''; $('backupPassword2').value = '';
     $('replaceVaultConfirm').value = '';
     $('replaceVaultBox').hidden = true;
     syncNoBackupWarning();
@@ -1818,8 +1831,12 @@
     setStatus('backupStatus', 'Plain JSON downloaded. Store it offline, or delete it once you have written the phrase down.', 'warn');
   });
 
+  // Returns true if the backup's wallet was installed; false if a lock or a
+  // later load superseded it during the decrypt.
   async function restore(payload, password) {
+    const token = beginWalletLoad();
     const record = await decryptVault(payload, password);
+    if (loadSuperseded(token)) return false;
     if (!record || typeof record.mnemonic !== 'string' || typeof record.path !== 'string') {
       throw new Error('The backup decrypted, but it does not hold a wallet record.');
     }
@@ -1837,7 +1854,7 @@
       $('addressIndex').value = unharden(parts[5]);
     }
     togglePathMode();
-    await setWallet(Derive.wallet(record.mnemonic, record.passphrase || '', record.path));
+    return setWallet(Derive.wallet(record.mnemonic, record.passphrase || '', record.path), token);
   }
 
   // Re-encrypt a browser backup saved with fewer than PBKDF2_ITER iterations,
@@ -1867,8 +1884,9 @@
     if (!raw) throw new Error('No encrypted browser backup exists.');
     const password = $('backupPassword').value;
     if (!password) throw new Error('Enter the backup password.');
-    await restore(JSON.parse(raw), password);
+    if (!(await restore(JSON.parse(raw), password))) return;
     upgradeInBackground(raw, password);
+    $('backupPassword').value = ''; $('backupPassword2').value = '';
     setStatus('backupStatus', 'Browser backup restored.', 'success');
   });
 
@@ -1880,7 +1898,8 @@
     if (file.size > BACKUP_MAX_BYTES) throw new Error('This file is too large to be a SatoFinder backup.');
     let payload;
     try { payload = JSON.parse(await file.text()); } catch { throw new Error('This is not a SatoFinder backup file (not JSON).'); }
-    await restore(payload, password);
+    if (!(await restore(payload, password))) return;
+    $('backupPassword').value = ''; $('backupPassword2').value = ''; $('restoreFile').value = '';
     setStatus('backupStatus', 'Encrypted backup file restored.', 'success');
   });
 
@@ -1951,7 +1970,7 @@
     if (!raw) throw new Error('No encrypted backup exists in this browser.');
     const password = $('lockPassword').value;
     if (!password) throw new Error('Enter your backup password.');
-    await restore(JSON.parse(raw), password);   // setWallet() releases the lock
+    if (!(await restore(JSON.parse(raw), password))) return;   // setWallet() releases the lock
     upgradeInBackground(raw, password);
     setStatus('walletStatus', 'Unlocked. Wallet restored from the encrypted browser backup.', 'success');
   });
