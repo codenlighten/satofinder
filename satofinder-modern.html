@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-FsBSaAypfYfu/GIZWL+9ALiBhhtgYxqHW6fgb0Y9WMM=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-NQHzqyB/oTi31KRUjuF8PmAdMXzQndAaW+G31+PHOiE=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -377,6 +377,12 @@
                 <button class="btn btn-primary" id="generateMnemonicBtn">Generate new phrase</button>
                 <button class="btn btn-blue" id="importMnemonicBtn">Import / derive</button>
                 <button class="btn btn-ghost" id="clearWalletBtn">Clear wallet</button>
+              </div>
+
+              <div id="phraseCheckBox" hidden>
+                <p class="mini" style="margin-top:12px"><b>Write the new phrase above down on paper now.</b> It is the only way back into this wallet: without a saved backup, auto-lock wipes it from this page. To load the wallet, type these words from your written copy:</p>
+                <div class="grid-3" id="phraseCheckInputs"></div>
+                <div class="actions"><button class="btn btn-primary" id="phraseCheckBtn">Confirm and load wallet</button><button class="btn btn-ghost" id="phraseCheckCancelBtn">Cancel</button></div>
               </div>
 
               <div class="key-grid" id="keyGrid" hidden>
@@ -1194,6 +1200,7 @@
   // hidden input would be decoration.
   function wipeWallet() {
     walletEpoch++;
+    closePhraseCheck();   // a generated phrase not yet loaded goes too
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
       builtTx: null, recoveryTx: null, recoveryUtxos: [],
@@ -1428,15 +1435,81 @@
   $('walletPreset').addEventListener('change', e => applyPreset(e.target.value));
   $('passphrase').addEventListener('change', redraw);
 
+  // ---- new phrase: shown, checked, then loaded ------------------------------
+  // A generated phrase only becomes the wallet after the user types
+  // PHRASE_CHECK_WORDS of its words at random positions, so a phrase that was
+  // never written down can't be funded and then lost to the idle lock.
+  const PHRASE_CHECK_WORDS = 3;
+  let pendingPhrase = null;   // { phrase, positions } while the check is open
+
+  function randomIndex(n) {   // uniform in [0, n) from the CSPRNG, by rejection
+    const limit = Math.floor(0x100000000 / n) * n;
+    const buf = new Uint32Array(1);
+    do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+    return buf[0] % n;
+  }
+
+  function closePhraseCheck() {
+    pendingPhrase = null;
+    $('phraseCheckInputs').replaceChildren();
+    $('phraseCheckBox').hidden = true;
+  }
+
+  // Replacing a loaded wallet with a different phrase asks first: without a
+  // written phrase or a backup, the loaded one would be gone.
+  async function confirmReplaceLoaded(newPhrase) {
+    if (!state.wallet || state.mnemonic === newPhrase) return true;
+    return confirmAction('Replace the loaded wallet?',
+      'The wallet on this page will be replaced. Make sure its recovery phrase is written down or saved as an encrypted backup first.');
+  }
+
   action('generateMnemonicBtn', 'walletStatus', async () => {
+    if (!(await confirmReplaceLoaded(null))) return;
     const bits = safeInt($('wordCount').value, 256);
     const phrase = Derive.newMnemonic(bits);
+    const words = phrase.split(' ');
+    const picked = new Set();
+    while (picked.size < Math.min(PHRASE_CHECK_WORDS, words.length)) picked.add(randomIndex(words.length));
+    const positions = [...picked].sort((a, b) => a - b);
+    pendingPhrase = { phrase, positions };
     $('mnemonicInput').value = phrase;
-    await setWallet(Derive.wallet(phrase, $('passphrase').value, currentPath()));
-    setStatus('walletStatus', `New ${ENTROPY_TO_WORDS[bits]}-word phrase generated locally. Write it down offline — with its passphrase, if you set one — before funding this wallet.`, 'warn');
+    // A new wallet starts without a BIP39 passphrase; one left in the field
+    // from the previous wallet would silently become part of this seed.
+    $('passphrase').value = '';
+    $('phraseCheckInputs').replaceChildren(...positions.map((pos, k) => el('div', { class: 'field' },
+      el('label', { for: `phraseCheck${k}`, text: `Word #${pos + 1}` }),
+      el('input', { id: `phraseCheck${k}`, type: 'text', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' }))));
+    $('phraseCheckBox').hidden = false;
+    setStatus('walletStatus', `New ${ENTROPY_TO_WORDS[bits]}-word phrase generated locally. Write it down, then type the requested words to load the wallet.`, 'warn');
   });
 
-  action('importMnemonicBtn', 'walletStatus', deriveCurrent);
+  action('phraseCheckBtn', 'walletStatus', async () => {
+    if (!pendingPhrase) throw new Error('Generate a new phrase first.');
+    const words = pendingPhrase.phrase.split(' ');
+    const norm = (w) => (w || '').trim().toLowerCase();
+    const ok = pendingPhrase.positions.every((pos, k) => norm($(`phraseCheck${k}`).value) === words[pos]);
+    if (!ok) throw new Error('Those words don\'t match the new phrase. Check your written copy.');
+    const phrase = pendingPhrase.phrase;
+    closePhraseCheck();
+    await setWallet(Derive.wallet(phrase, $('passphrase').value, currentPath()));
+    setStatus('walletStatus', 'New wallet loaded. Save an encrypted backup (Backup panel) so auto-lock can be undone with a password.', 'success');
+  });
+
+  $('phraseCheckCancelBtn').addEventListener('click', () => {
+    if (pendingPhrase && $('mnemonicInput').value === pendingPhrase.phrase) $('mnemonicInput').value = '';
+    closePhraseCheck();
+    setStatus('walletStatus', state.wallet ? 'New phrase discarded.' : 'No wallet is loaded.');
+  });
+
+  action('importMnemonicBtn', 'walletStatus', async () => {
+    const phrase = $('mnemonicInput').value.trim().replace(/\s+/g, ' ');
+    if (pendingPhrase && phrase === pendingPhrase.phrase) {
+      throw new Error('Confirm the new phrase with the requested words (below) to load it.');
+    }
+    if (!(await confirmReplaceLoaded(phrase))) return;
+    closePhraseCheck();
+    await deriveCurrent();
+  });
   action('refreshBalanceBtn', 'walletStatus', async () => {
     await refreshBalance();
     if (state.wallet) setStatus('walletStatus', `Balance refreshed for ${state.wallet.address}.`, 'success');
