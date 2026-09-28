@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-JdGF/NXbzx7yJlonMphYlUfhGj9DObaPaIN5+SCRlzo=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-AXbzRko9IfwM8tjPIKAwQr48OCBqU5gA7MJykKm3V3s=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -722,6 +722,7 @@
       unspent: async (a) => {
         const seen = new Map();
         let token = '';
+        const used = new Set();   // a token seen twice would page forever
         for (let page = 0; page < WOC_UTXO_MAX_PAGES; page++) {
           const url = `${state.settings.apiBase}/address/${encodeURIComponent(a)}/unspent/all?limit=${WOC_UTXO_PAGE}`
             + (token ? `&token=${encodeURIComponent(token)}` : '');
@@ -731,8 +732,10 @@
             if (u.isSpentInMempoolTx) continue;
             seen.set(`${u.tx_hash}:${u.tx_pos}`, u);
           }
-          token = body.nextPageToken || '';
-          if (!token) return [...seen.values()];
+          const next = body.nextPageToken || '';
+          if (!next) return [...seen.values()];
+          if (used.has(next)) throw new Error(`WhatsOnChain repeated a UTXO page for ${a}; the list may be incomplete.`);
+          used.add(next); token = next;
         }
         throw new Error(`Too many UTXOs at ${a} to list completely.`);
       },
@@ -1245,8 +1248,12 @@
   // path. It never reads the phrase box, so a phrase that hasn't been loaded
   // (a new one awaiting its check, or one typed but not imported) can't
   // become the wallet this way; that only happens through Import.
+  // While a new phrase awaits its check, the fields belong to it: re-deriving
+  // the loaded wallet here would write that wallet's passphrase back, and the
+  // new phrase would then load with it. The path applies when it is
+  // confirmed, or to the loaded wallet if it is cancelled.
   function redraw() {
-    if (!state.wallet) { syncPathDisplay(); return; }
+    if (!state.wallet || pendingPhrase) { syncPathDisplay(); return; }
     setWallet(Derive.wallet(state.mnemonic, state.passphrase, currentPath()))
       .catch(e => setStatus('walletStatus', e.message, 'error'));
   }
@@ -1631,6 +1638,7 @@
     if (pendingPhrase && $('mnemonicInput').value === pendingPhrase.phrase) $('mnemonicInput').value = '';
     closePhraseCheck();
     setStatus('walletStatus', state.wallet ? 'New phrase discarded.' : 'No wallet is loaded.');
+    redraw();   // back to the loaded wallet, at the path the fields now show
   });
 
   action('importMnemonicBtn', 'walletStatus', async () => {
@@ -1943,7 +1951,8 @@
     const token = beginWalletLoad();
     const record = await decryptVault(payload, password);
     if (loadSuperseded(token)) return false;
-    if (!record || typeof record.mnemonic !== 'string' || typeof record.path !== 'string') {
+    if (!record || typeof record.mnemonic !== 'string' || typeof record.path !== 'string'
+        || (record.passphrase !== undefined && typeof record.passphrase !== 'string')) {
       throw new Error('The backup decrypted, but it does not hold a wallet record.');
     }
     $('walletPreset').value = record.preset || 'custom';

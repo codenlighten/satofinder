@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-d2Cf1ByFfhEbyoElhXHjK8sQ+xkV6wK2XPd2/lJWq1Y=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-JwJS02ZHR2op24MpW4BtC6XL/AItpUJ3HeB0Z96PhA0=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -566,6 +566,7 @@ const Net = {
     unspent:    async (a) => {
                   const seen = new Map();
                   let token = '';
+                  const used = new Set();   // a token seen twice would page forever
                   for (let page = 0; page < WOC_UTXO_MAX_PAGES; page++) {
                     const body = await api(ENDPOINTS.woc.unspentAll(a, token));
                     if (!body || !Array.isArray(body.result)) throw new Error('Unexpected unspent response');
@@ -573,8 +574,10 @@ const Net = {
                       if (u.isSpentInMempoolTx) continue;
                       seen.set(`${u.tx_hash}:${u.tx_pos}`, u);
                     }
-                    token = body.nextPageToken || '';
-                    if (!token) return [...seen.values()];
+                    const next = body.nextPageToken || '';
+                    if (!next) return [...seen.values()];
+                    if (used.has(next)) throw new Error('WhatsOnChain repeated a UTXO page; the list may be incomplete.');
+                    used.add(next); token = next;
                   }
                   throw new Error('Too many UTXOs at this address to list completely.');
                 },
