@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-AXbzRko9IfwM8tjPIKAwQr48OCBqU5gA7MJykKm3V3s=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-Hr8ughZkBlaS2eXCTD0nmSd5RgRALDjrOO36VK4LMBI=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1253,8 +1253,8 @@
   // new phrase would then load with it. The path applies when it is
   // confirmed, or to the loaded wallet if it is cancelled.
   function redraw() {
-    if (!state.wallet || pendingPhrase) { syncPathDisplay(); return; }
-    setWallet(Derive.wallet(state.mnemonic, state.passphrase, currentPath()))
+    if (!state.wallet || pendingPhrase) { syncPathDisplay(); return Promise.resolve(); }
+    return setWallet(Derive.wallet(state.mnemonic, state.passphrase, currentPath()))
       .catch(e => setStatus('walletStatus', e.message, 'error'));
   }
 
@@ -1727,7 +1727,8 @@
     $(indexId).value = safeInt($(indexId).value) + 1;
     $('walletPreset').value = 'custom';
     syncPathDisplay();
-    return deriveCurrent();
+    // Steps the loaded wallet only; never loads what the phrase box holds.
+    return redraw();
   };
   action('nextAddressBtn', 'walletStatus', () => stepAddress(0));
   action('nextChangeBtn', 'walletStatus', () => stepAddress(1));
