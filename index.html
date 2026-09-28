@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-BkVn6MeTiZZIhK2cgdig/pCquPx6Xa1Oyxm610pCIrE=' https://cdn.jsdelivr.net;
+    script-src 'sha256-r1eTxskODvFqXe9sZOFO6wA2e/t1Tokxc0F9yoHLTkw=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -759,8 +759,52 @@ function el(tag, attrs = {}, children = []) {
 // Per-panel renderers. Each owns one DOM region and is pure (state) => void.
 // renderApp is a view dispatcher; the real per-section panels (keys, balance,
 // send, history, recovery) arrive in later phases.
+// Every state change re-renders the whole view, which would wipe anything
+// typed but not yet submitted. Within the same view and step, carry over each
+// id'd field the user edited, plus focus and caret, into the new DOM. A field
+// whose rendered default changed (state set it on purpose, e.g. "Use current")
+// takes the new value; nothing carries across a view change (lock, unlock).
+let lastRenderKey = null;
+// Fields to leave empty on the next render even within the same view: set
+// after a success so a finished form can't be resubmitted by accident.
+const fieldsToClear = new Set();
+function clearFieldsOnNextRender(...ids) { for (const id of ids) fieldsToClear.add(id); }
+function snapshotFields(root) {
+  const fields = {};
+  for (const f of root.querySelectorAll('input[id], textarea[id], select[id]')) {
+    fields[f.id] = { value: f.value, defaultValue: f.defaultValue, checked: f.checked,
+                     defaultChecked: f.defaultChecked, files: f.type === 'file' ? f.files : null };
+  }
+  const a = document.activeElement;
+  const focus = a && a.id && root.contains(a)
+    ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
+  return { fields, focus };
+}
+function restoreFields(root, snap) {
+  for (const [id, old] of Object.entries(snap.fields)) {
+    if (fieldsToClear.has(id)) continue;
+    const f = root.querySelector(`#${CSS.escape(id)}`);
+    if (!f) continue;
+    if (f.type === 'file') { if (old.files && old.files.length) f.files = old.files; continue; }
+    if (f.type === 'checkbox' || f.type === 'radio') {
+      if (f.defaultChecked === old.defaultChecked) f.checked = old.checked;
+      continue;
+    }
+    if (f.defaultValue === old.defaultValue && f.value !== old.value) f.value = old.value;
+  }
+  if (snap.focus) {
+    const f = root.querySelector(`#${CSS.escape(snap.focus.id)}`);
+    if (f) {
+      f.focus();
+      try { if (snap.focus.start != null) f.setSelectionRange(snap.focus.start, snap.focus.end); } catch { /* not a text field */ }
+    }
+  }
+}
 function renderApp(s) {
   const root = $('app');
+  const key = `${s.view}|${s.step || ''}`;
+  const snap = key === lastRenderKey ? snapshotFields(root) : null;
+  lastRenderKey = key;
   while (root.firstChild) root.removeChild(root.firstChild);
   let view;
   switch (s.view) {
@@ -773,6 +817,8 @@ function renderApp(s) {
     default:         view = renderLanding(s);
   }
   root.appendChild(view);
+  if (snap) restoreFields(root, snap);
+  fieldsToClear.clear();
 }
 
 function renderLanding(s) {
@@ -2029,7 +2075,11 @@ const Actions = {
       if (session === walletSession) {
         setState(ok ? { draftTx: null, busy: false, balance: null } : { busy: false, balance: null });
       }
-      if (ok) Status.info(`Broadcast OK. Txid: ${d.txid}`);
+      if (ok) {
+        // The payment is done: don't leave the form filled for a second send.
+        clearFieldsOnNextRender('send-to', 'send-amt', 'tip-amt');
+        Status.info(`Broadcast OK. Txid: ${d.txid}`);
+      }
       else Status.error(unknownOutcome(d.txid));
     } catch (e) {
       if (session !== walletSession) return;
@@ -2277,6 +2327,7 @@ const Actions = {
     try {
       const { mnemonic, passphrase } = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
       if (session !== walletSession) return;   // locked meanwhile: never reveal into a locked UI
+      clearFieldsOnNextRender('export-pw');
       setState({ busy: false, draft: {
         ...state.draft,
         exportedMnemonic: mnemonic,
