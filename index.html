@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-IvB9p+geka/TxOPjGVpv4U1k8q60LxkgUe4P6K7C7h4=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-VYRtzA4IUV20001tDklNZoUFAGFGHuyNxu1mnRpBuYM=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -187,7 +187,8 @@ const BACKUP_CHECK_WORDS = 3;
 // A copied secret (key, phrase, passphrase) is cleared from the clipboard
 // after this long, or at lock if sooner.
 const CLIPBOARD_CLEAR_MS = 60 * 1000;   // words asked for when confirming a new phrase is written down
-const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
+const RECOVERY_DEPTH = 50;      // default addresses scanned per branch (receive + change)
+const RECOVERY_DEPTHS = [50, 100, 200, 500];   // choices offered for a deeper scan
 const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
 const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
@@ -385,6 +386,7 @@ const state = {
   // ui prefs
   hideKeys: true,
   feePerKb: DEFAULT_FEE_PER_KB,             // sat/KB used by send + sweep
+  recoveryDepth: RECOVERY_DEPTH,            // addresses per branch the recovery scan covers
 
   // send flow — set by Actions.buildSend, cleared by cancel/broadcast
   draftTx: null,                           // { tx, hex, txid, to, sentSats, changeSats, fee, vsize }
@@ -1301,6 +1303,7 @@ function renderSendConfirm(s, draft) {
 
 function renderRecoveryPanel(s) {
   const rec = s.recovery;
+  const depth = RECOVERY_DEPTHS.includes(s.recoveryDepth) ? s.recoveryDepth : RECOVERY_DEPTH;
   const d = s.derived;
   const swept = (s.draft && s.draft.swept) || {};
   // Destination field: defaults to the current derived address, but the user
@@ -1328,7 +1331,13 @@ function renderRecoveryPanel(s) {
 
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Recovery sweep'),
-    el('p', { class: 'muted' }, `Scans the first ${RECOVERY_DEPTH} receive + ${RECOVERY_DEPTH} change addresses under the current preset for stray UTXOs. Edit the destination below before sweeping if you want to send to a different wallet.`),
+    el('p', { class: 'muted' }, `Scans the first ${depth} receive + ${depth} change addresses under the current preset for stray UTXOs. Coins further out need a deeper scan. Edit the destination below before sweeping if you want to send to a different wallet.`),
+    el('div', { class: 'row', style: 'margin-bottom:12px;align-items:center' }, [
+      el('span', { class: 'muted', style: 'font-size:11px;flex:0 0 auto' }, 'Addresses per branch'),
+      el('select', { id: 'recovery-depth', disabled: s.busy,
+                     onchange: () => Actions.setRecoveryDepth($('recovery-depth').value) },
+        RECOVERY_DEPTHS.map((n) => el('option', { value: String(n), selected: n === depth }, String(n)))),
+    ]),
 
     // Destination input — visible whenever results exist OR before scanning,
     // so users see the destination policy up-front.
@@ -1354,7 +1363,7 @@ function renderRecoveryPanel(s) {
     el('div', { class: 'row', style: 'margin-bottom:8px' }, [
       el('button', { disabled: s.busy, onclick: () => Actions.scanRecovery() },
         s.busy && rec && rec.scanning ? `Scanning… ${rec.done || 0}/${rec.total || ''}`
-                                       : (rec ? 'Re-scan' : `Scan first ${RECOVERY_DEPTH} addresses`)),
+                                       : (rec ? 'Re-scan' : `Scan first ${depth} addresses`)),
       rec && rec.found && rec.found.length > 1 && !plan
         ? el('button', { class: 'primary', disabled: s.busy,
                          onclick: () => Actions.prepareSweepAll() },
@@ -2153,6 +2162,12 @@ const Actions = {
     }
   },
 
+  setRecoveryDepth(raw) {
+    const n = parseInt(raw, 10);
+    if (!RECOVERY_DEPTHS.includes(n)) { Status.error('Choose one of the listed scan depths.'); return; }
+    setState({ recoveryDepth: n });
+  },
+
   // ---- recovery scan + sweep
   async scanRecovery() {
     if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
@@ -2161,7 +2176,8 @@ const Actions = {
     // results are dropped, and so are the "swept" marks: new coins can arrive
     // at an address swept earlier, and the fresh scan is what shows them.
     const draft = { ...state.draft }; delete draft.sweepAllPlan; delete draft.sweepPreview; delete draft.swept;
-    setState({ busy: true, draft, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
+    const depth = RECOVERY_DEPTHS.includes(state.recoveryDepth) ? state.recoveryDepth : RECOVERY_DEPTH;
+    setState({ busy: true, draft, recovery: { scanning: true, done: 0, total: depth * 2 } });
     try {
       const onProgress = (p) => {
         if (session !== walletSession) return;
@@ -2169,12 +2185,12 @@ const Actions = {
           setState({ recovery: { ...state.recovery, done: p.done, total: p.total } });
         }
       };
-      const found = await Recovery.scan(state.wallet.root, state, { onProgress });
+      const found = await Recovery.scan(state.wallet.root, state, { depth, onProgress });
       if (session !== walletSession) return;   // locked or switched: drop the results
       const totalSats = found.reduce((a, x) => a + x.totalSats, 0);
       setState({
         busy: false,
-        recovery: { scanning: false, found, totalSats, done: RECOVERY_DEPTH * 2, total: RECOVERY_DEPTH * 2 },
+        recovery: { scanning: false, found, totalSats, depth, done: depth * 2, total: depth * 2 },
       });
       Status.info(found.length === 0 ? 'Recovery scan complete — nothing found.' : `Found ${found.length} addresses with ${Fmt.sats(totalSats)} sats.`);
     } catch (e) {
