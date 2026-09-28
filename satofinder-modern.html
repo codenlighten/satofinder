@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-NufrREtqFSRjqWr+PoyU9fc1y5oc6u8bRWvtD01aq8o=' https://cdn.jsdelivr.net;
+    script-src 'sha256-EQEYSCo4sDnHZxuoKOZZknySREg7wmGZ8wskfWpeHwE=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -513,10 +513,8 @@
 
   // Auto-lock. LOCK_IDLE_MS matches Classic's AUTOLOCK_MS.
   //
-  // LOCK_HIDDEN_GRACE_MS is a deliberate divergence from Classic, which locks
-  // the instant the tab is hidden. Classic can afford that: it always has a
-  // vault, so unlocking costs a password. Here a lock with no saved backup
-  // costs the user retyping 24 words — and this page's own explorer links open
+  // LOCK_HIDDEN_GRACE_MS matches Classic's HIDDEN_GRACE_MS. Here a lock with
+  // no saved backup costs the user retyping 24 words — and this page's own explorer links open
   // with target="_blank", which hides the tab. Locking instantly would destroy
   // the wallet when someone clicks "Inspect on WhatsOnChain" to review the very
   // transaction they are about to broadcast. A backgrounded tab still locks;

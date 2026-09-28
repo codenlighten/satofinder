@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-pEevVP5IfxnMCymJEFxa4ukzi6yE/oesjO5iAEbPyyY=' https://cdn.jsdelivr.net;
+    script-src 'sha256-yze3rQVlfEZkBQPa+VdQlO/l9CpSSoEts3mWpVTd0O4=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -179,6 +179,10 @@ const MAX_FEE_PER_KB = 100000;  // sanity ceiling on user input (0.001 BSV/KB)
 const PBKDF2_ITER = 600000;     // OWASP 2023 recommendation for PBKDF2-SHA256 (new vaults)
 const PBKDF2_ITER_LEGACY = 310000;  // what a vault without a recorded count was saved with
 const AUTOLOCK_MS = 10 * 60 * 1000;
+// A hidden tab locks after this grace period rather than at once. Locking
+// discards any built transaction, and checking its raw hex on WhatsOnChain
+// (as the confirm screens suggest) means switching tabs.
+const HIDDEN_GRACE_MS = 60 * 1000;
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
 const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
@@ -2237,16 +2241,31 @@ const Wallet = {
 // staying interactive.
 const AutoLock = {
   _timer: null,
+  _hidden: null,
   arm() {
-    AutoLock.disarm();
+    // Resets only the idle timer: a pending hidden-tab lock must survive it.
+    if (AutoLock._timer) clearTimeout(AutoLock._timer);
     AutoLock._timer = setTimeout(() => {
       if (!state.locked) Actions.lock();
     }, AUTOLOCK_MS);
   },
   disarm() {
     if (AutoLock._timer) { clearTimeout(AutoLock._timer); AutoLock._timer = null; }
+    if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
   },
   bump() { if (!state.locked) AutoLock.arm(); },
+  // Tab hidden: lock once the grace period passes, unless it comes back first.
+  onHidden() {
+    if (state.locked || AutoLock._hidden) return;
+    AutoLock._hidden = setTimeout(() => {
+      AutoLock._hidden = null;
+      if (!state.locked) Actions.lock();
+    }, HIDDEN_GRACE_MS);
+  },
+  onVisible() {
+    if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
+    AutoLock.bump();
+  },
 };
 
 function wireGlobalEvents() {
@@ -2254,9 +2273,10 @@ function wireGlobalEvents() {
   for (const ev of ['mousemove','keydown','touchstart','focus']) {
     window.addEventListener(ev, AutoLock.bump, { passive: true });
   }
-  // Lock when tab is hidden — safer than waiting for the idle timeout.
+  // A hidden tab locks after HIDDEN_GRACE_MS, sooner than the idle timeout.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && !state.locked) Actions.lock();
+    if (document.visibilityState === 'hidden') AutoLock.onHidden();
+    else AutoLock.onVisible();
   });
 }
 

@@ -41,7 +41,7 @@
       <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
       <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@7.1.0</code> on both pages. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
       <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to a fixed allowlist (<code>api.whatsonchain.com</code>, <code>api.bitails.io</code> and <code>ordinals.gorillapool.io</code> in Classic; <code>api.whatsonchain.com</code> and <code>ordinals.gorillapool.io</code> in the Alternate UI).</li>
-      <li>The wallet auto-locks after 10 minutes of inactivity, and when the tab is hidden. Private key / mnemonic are cleared from memory. Classic locks the instant the tab is hidden; the Alternate UI waits 60 seconds first (see <a href="#alternate">Alternate UI</a>).</li>
+      <li>The wallet auto-locks after 10 minutes of inactivity, and when the tab is hidden. Private key / mnemonic are cleared from memory. Both interfaces wait 60 seconds after the tab is hidden before locking, so you can check a transaction on WhatsOnChain in another tab; coming back within that time cancels the lock.</li>
       <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
     </ul>
   </div>
