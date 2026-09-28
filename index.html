@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-VYRtzA4IUV20001tDklNZoUFAGFGHuyNxu1mnRpBuYM=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-1wOOBKq1vNlEpAwqSlCUzfsogw9DwMp2F7ztJWFrnAI=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -183,10 +183,10 @@ const AUTOLOCK_MS = 10 * 60 * 1000;
 // discards any built transaction, and checking its raw hex on WhatsOnChain
 // (as the confirm screens suggest) means switching tabs.
 const HIDDEN_GRACE_MS = 60 * 1000;
-const BACKUP_CHECK_WORDS = 3;
+const BACKUP_CHECK_WORDS = 3;   // words asked for when confirming a new phrase is written down
 // A copied secret (key, phrase, passphrase) is cleared from the clipboard
 // after this long, or at lock if sooner.
-const CLIPBOARD_CLEAR_MS = 60 * 1000;   // words asked for when confirming a new phrase is written down
+const CLIPBOARD_CLEAR_MS = 60 * 1000;
 const RECOVERY_DEPTH = 50;      // default addresses scanned per branch (receive + change)
 const RECOVERY_DEPTHS = [50, 100, 200, 500];   // choices offered for a deeper scan
 const BITAILS_BATCH = 20;       // per-request address count
@@ -275,10 +275,18 @@ const Vault = {
   read() {
     try { return JSON.parse(localStorage.getItem(VAULT_KEY)); } catch { return null; }
   },
-  async save(mnemonic, password, passphrase = '') {
+  // seal() does the slow encryption and writes nothing; commit() writes
+  // synchronously. Callers that can be cancelled seal first, re-check that
+  // nothing changed meanwhile, and only then commit.
+  async seal(mnemonic, password, passphrase = '') {
     const payload = JSON.stringify({ mnemonic, passphrase, createdAt: Date.now() });
-    const blob = await Crypto.encrypt(password, payload);
+    return Crypto.encrypt(password, payload);
+  },
+  commit(blob) {
     localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
+  },
+  async save(mnemonic, password, passphrase = '') {
+    Vault.commit(await Vault.seal(mnemonic, password, passphrase));
   },
   async unlock(password) {
     const blob = Vault.read();
@@ -1766,21 +1774,24 @@ const Actions = {
       let validPhrase = false;
       try { validPhrase = bsv.Mnemonic.isValid(mnemonic); } catch { validPhrase = false; }
       if (!validPhrase) throw new Error('The backup decrypted, but it does not hold a valid recovery phrase.');
-      await Vault.save(mnemonic, password, passphrase);
+      // Open the wallet before touching the stored vault: if it can't open,
+      // the existing vault stays as it is.
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      const sealed = await Vault.seal(mnemonic, password, passphrase);
       if (session !== walletSession) {
-        // Wiped while saving: the save may have landed after the wipe, so wipe again.
-        if (!state.vaultExists) { Vault.wipe(); Status.info('Vault wiped while restoring; nothing was kept.'); }
+        setState({ busy: false });
+        Status.info('Restore stopped because the vault changed meanwhile. Nothing was changed.');
         return;
       }
-      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      Vault.commit(sealed);
       walletSession++;
       setState({
         ...clearedWalletState(),
         wallet, locked: false, vaultExists: true, view: 'unlocked', step: null,
       });
+      AutoLock.start();
       Actions._rederive();
       Status.info('Backup restored and unlocked.' + (passphrase ? ' (BIP39 passphrase restored)' : ''));
-      AutoLock.start();
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -1885,24 +1896,26 @@ const Actions = {
     setState({ busy: true });
     const session = walletSession;
     try {
-      await Vault.save(mnemonic, pw1, passphrase);
+      // Open the wallet first: nothing is stored unless it opens.
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      const blob = await Vault.seal(mnemonic, pw1, passphrase);
       if (session !== walletSession) {
-        // Wiped while saving: the save may have landed after the wipe, so wipe again.
-        if (!state.vaultExists) { Vault.wipe(); Status.info('Vault wiped while saving; nothing was kept.'); }
+        // Locked, wiped or replaced while encrypting: nothing has been written.
+        setState({ busy: false });
+        Status.info('Stopped because the vault changed meanwhile. Nothing was saved.');
         return;
       }
-      // Open the wallet straight from RAM rather than round-tripping.
-      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      Vault.commit(blob);
       walletSession++;
       setState({
         ...clearedWalletState(),
         wallet, locked: false, vaultExists: true,
         view: 'unlocked', step: null,
       });
+      AutoLock.start();
       Actions._rederive();
       const passNote = passphrase ? ' (BIP39 passphrase set)' : '';
       Status.info((origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.') + passNote);
-      AutoLock.start();
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -1926,9 +1939,9 @@ const Actions = {
         ...clearedWalletState(),
         wallet, locked: false, view: 'unlocked', step: null,
       });
+      AutoLock.start();
       Actions._rederive();
       Status.info('Unlocked.');
-      AutoLock.start();
       // Bring an older vault up to the current iteration count, in the
       // background: the wallet is already open, and failure keeps the old one.
       Vault.upgradeIfNeeded(password, rawBefore).catch((e) => {
@@ -1984,10 +1997,13 @@ const Actions = {
   // For keys, phrases and passphrases: the clipboard is cleared after
   // CLIPBOARD_CLEAR_MS or at lock, whichever comes first.
   copySecret(text, label) {
+    const session = walletSession;
     Actions.copyToClipboard(text).then((ok) => {
       if (!ok) return;
+      // Locked while the copy was in flight: take the secret back off at once.
+      if (session !== walletSession) { ClipboardGuard.clearNow(); return; }
       ClipboardGuard.schedule();
-      Status.info(`${label} copied. The clipboard will be cleared in ${CLIPBOARD_CLEAR_MS / 1000} seconds or when the wallet locks.`);
+      Status.info(`${label} copied. It will be cleared from the clipboard after ${CLIPBOARD_CLEAR_MS / 1000} seconds or when the wallet locks, once this page is in front again. Closing the tab first leaves it on the clipboard.`);
     });
   },
 
@@ -2542,14 +2558,23 @@ const ClipboardGuard = {
     ClipboardGuard._due = false;
   },
   pending() { return !!ClipboardGuard._timer || ClipboardGuard._due; },
-  async clearNow() {
+  _clearing: null,
+  // Concurrent callers (a focus event and a lock together) share one write.
+  clearNow() {
     if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
-    try {
-      await navigator.clipboard.writeText('');
-      ClipboardGuard._due = false;
-    } catch {
-      ClipboardGuard._due = true;   // not focused: try again on focus
+    if (!ClipboardGuard._clearing) {
+      ClipboardGuard._clearing = (async () => {
+        try {
+          await navigator.clipboard.writeText('');
+          ClipboardGuard._due = false;
+        } catch {
+          ClipboardGuard._due = true;   // not focused: try again on focus
+        } finally {
+          ClipboardGuard._clearing = null;
+        }
+      })();
     }
+    return ClipboardGuard._clearing;
   },
   onFocus() { if (ClipboardGuard._due) ClipboardGuard.clearNow(); },
 };
