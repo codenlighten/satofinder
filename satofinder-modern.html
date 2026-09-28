@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-BQdaY6xDRqTjPn2jQHOl06DbGXK1fgT7NoEu9ihFq/M=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-rQxBIzueuZus/UZTcn+/pvaD0YQ09/671AZk1VOEPDA=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -516,6 +516,8 @@
   // through a limiter at this interval; going faster just earns 429s, and a 429
   // during a recovery scan is how a tool silently under-reports someone's coins.
   const WOC_MIN_INTERVAL_MS = 350;
+  const WOC_UTXO_PAGE = 1000;      // UTXOs per /unspent/all page
+  const WOC_UTXO_MAX_PAGES = 50;   // beyond this the listing is incomplete: fail
   const RETRY_ATTEMPTS = 4;
   const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
   const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
@@ -712,7 +714,26 @@
   const Net = {
     woc: {
       balance: (a) => withRetry(() => wocLimit(() => request(`${state.settings.apiBase}/address/${encodeURIComponent(a)}/balance`)), `Balance lookup for ${a}`),
-      unspent: (a) => withRetry(() => wocLimit(() => request(`${state.settings.apiBase}/address/${encodeURIComponent(a)}/unspent`)), `UTXO lookup for ${a}`),
+      // The documented, paged listing (the older /unspent is no longer in
+      // WhatsOnChain's docs): every page, minus outputs already spent by an
+      // unconfirmed transaction. Throws rather than return a partial list.
+      unspent: async (a) => {
+        const seen = new Map();
+        let token = '';
+        for (let page = 0; page < WOC_UTXO_MAX_PAGES; page++) {
+          const url = `${state.settings.apiBase}/address/${encodeURIComponent(a)}/unspent/all?limit=${WOC_UTXO_PAGE}`
+            + (token ? `&token=${encodeURIComponent(token)}` : '');
+          const body = await withRetry(() => wocLimit(() => request(url)), `UTXO lookup for ${a}`);
+          if (!body || !Array.isArray(body.result)) throw new Error('Unexpected unspent response shape.');
+          for (const u of body.result) {
+            if (u.isSpentInMempoolTx) continue;
+            seen.set(`${u.tx_hash}:${u.tx_pos}`, u);
+          }
+          token = body.nextPageToken || '';
+          if (!token) return [...seen.values()];
+        }
+        throw new Error(`Too many UTXOs at ${a} to list completely.`);
+      },
       price: () => withRetry(() => wocLimit(() => request(`${state.settings.apiBase}/exchangerate`)), 'Exchange rate lookup'),
       broadcast: (txhex) => wocLimit(() => request(`${state.settings.apiBase}/tx/raw`, {
         method: 'POST',
@@ -1712,6 +1733,7 @@
     $('recoveryRawWrap').hidden = true;
     state.recoveryUtxos = [];
     state.recoveryTx = null;   // built from the previous scan's results
+    $('utxoResults').replaceChildren();   // a failed scan must not leave old rows showing
 
     const epoch = walletEpoch;
     const result = await scanForUtxos(count, chains, (step, steps, wallet) =>

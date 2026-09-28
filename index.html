@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-Qgazk+XzdxefqRgjEGevhSTsJ0biWdW+OYPrzdlC1OQ=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-1NJJvIniUY6ik0zfdWBXmu3aCw0hyY4YtC6eFbrJ+Z0=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -129,14 +129,19 @@
 // ====================== 03. CONSTANTS ======================
 const VERSION = '2.5.0';
 
-// Bitails paging, used by ENDPOINTS below (so defined before it).
+// WhatsOnChain and Bitails paging, used by ENDPOINTS below (so defined before it).
+const WOC_UTXO_PAGE = 1000;
+const WOC_UTXO_MAX_PAGES = 50;
 const BITAILS_BATCH = 20;       // per-request address count
 const BITAILS_PAGE = 1000;      // UTXOs per address per request
 const BITAILS_MAX_PAGES = 50;   // beyond this an address's scan is incomplete: fail
 const ENDPOINTS = Object.freeze({
   woc: {
     balance:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/balance`,
-    unspent:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/unspent`,
+    // The documented, paged UTXO listing (the older /unspent is no longer in
+    // WhatsOnChain's docs); Net.woc.unspent follows nextPageToken to the end.
+    unspentAll: (a, token) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/unspent/all?limit=${WOC_UTXO_PAGE}`
+                + (token ? `&token=${encodeURIComponent(token)}` : ''),
     history:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/history`,
     txInfo:   (h) => `https://api.whatsonchain.com/v1/bsv/main/tx/hash/${encodeURIComponent(h)}`,
     broadcast: 'https://api.whatsonchain.com/v1/bsv/main/tx/raw',
@@ -556,7 +561,23 @@ async function api(url, opts = {}) {
 const Net = {
   woc: {
     balance:    (a) => api(ENDPOINTS.woc.balance(a)),
-    unspent:    (a) => api(ENDPOINTS.woc.unspent(a)),
+    // Every UTXO of the address across all pages, minus outputs already spent
+    // by an unconfirmed transaction. Throws rather than return a partial list.
+    unspent:    async (a) => {
+                  const seen = new Map();
+                  let token = '';
+                  for (let page = 0; page < WOC_UTXO_MAX_PAGES; page++) {
+                    const body = await api(ENDPOINTS.woc.unspentAll(a, token));
+                    if (!body || !Array.isArray(body.result)) throw new Error('Unexpected unspent response');
+                    for (const u of body.result) {
+                      if (u.isSpentInMempoolTx) continue;
+                      seen.set(`${u.tx_hash}:${u.tx_pos}`, u);
+                    }
+                    token = body.nextPageToken || '';
+                    if (!token) return [...seen.values()];
+                  }
+                  throw new Error('Too many UTXOs at this address to list completely.');
+                },
     history:    (a) => api(ENDPOINTS.woc.history(a)),
     txInfo:     (h) => api(ENDPOINTS.woc.txInfo(h)),
     price:      ()  => api(ENDPOINTS.woc.price),
