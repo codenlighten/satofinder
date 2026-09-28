@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-8QPZhUt6Fvd/yN/+1vwZnLLZZnJ97fnsQyZRtnkVvu4=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-BQdaY6xDRqTjPn2jQHOl06DbGXK1fgT7NoEu9ihFq/M=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1160,6 +1160,7 @@
     wallet.fingerprint = await sha256Hex(`${wallet.address}|${wallet.path}`);
     if (loadSuperseded(token)) return false;   // locked or replaced meanwhile
     walletEpoch++;
+    resetReplaceConsent();   // consent given for another wallet doesn't carry over
     const previousAddress = state.wallet ? state.wallet.address : null;
 
     state.wallet = wallet;
@@ -1229,6 +1230,7 @@
     walletEpoch++;
     walletLoadSeq++;      // a load still in progress must not reinstall a wallet
     if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
+    resetReplaceConsent();
     closePhraseCheck();   // a generated phrase not yet loaded goes too
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
@@ -1832,6 +1834,14 @@
       return false;
     }
   }
+  // REPLACE only counts for the backup it was shown for, in the wallet
+  // session it was typed in; see resetReplaceConsent.
+  let replaceShownFor = null;
+  function resetReplaceConsent() {
+    replaceShownFor = null;
+    $('replaceVaultConfirm').value = '';
+    $('replaceVaultBox').hidden = true;
+  }
   action('saveEncryptedBtn', 'backupStatus', async () => {
     const password = requireBackupPassword();
     const record = seedRecord();
@@ -1839,8 +1849,11 @@
     const existing = localStorage.getItem(LS_VAULT);
     if (existing && !(await storedVaultIsThisWallet(existing, password, record))) {
       if (epochChanged(epoch)) return;
-      $('replaceVaultBox').hidden = false;
-      if ($('replaceVaultConfirm').value.trim() !== 'REPLACE') {
+      const consented = replaceShownFor === existing && $('replaceVaultConfirm').value.trim() === 'REPLACE';
+      if (!consented) {
+        if (replaceShownFor !== existing) $('replaceVaultConfirm').value = '';
+        replaceShownFor = existing;
+        $('replaceVaultBox').hidden = false;
         throw new Error('A different backup is saved in this browser. Download it first if you need it, then type REPLACE to overwrite it.');
       }
     }
@@ -1849,8 +1862,7 @@
     if (epochChanged(epoch) || localStorage.getItem(LS_VAULT) !== existing) return;
     localStorage.setItem(LS_VAULT, JSON.stringify(vault));
     $('backupPassword').value = ''; $('backupPassword2').value = '';
-    $('replaceVaultConfirm').value = '';
-    $('replaceVaultBox').hidden = true;
+    resetReplaceConsent();
     syncNoBackupWarning();
     setStatus('backupStatus', 'Encrypted wallet backup saved in this browser. Auto-lock can now be undone with this password.', 'success');
   });
@@ -1858,13 +1870,20 @@
   action('downloadStoredVaultBtn', 'backupStatus', async () => {
     const raw = localStorage.getItem(LS_VAULT);
     if (!raw) throw new Error('There is no browser backup to download.');
-    downloadJson(`satofinder-encrypted-existing-${Date.now()}.json`, JSON.parse(raw));
+    // Byte for byte, so even a backup this page can't parse can be kept.
+    const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    const a = el('a', { href: url, download: `satofinder-encrypted-existing-${Date.now()}.json` });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setStatus('backupStatus', 'Existing browser backup downloaded. It opens with the password it was saved with.', 'success');
   });
 
   action('downloadEncryptedBtn', 'backupStatus', async () => {
     const password = requireBackupPassword();
-    downloadJson(`satofinder-encrypted-${Date.now()}.json`, await encryptVault(password));
+    const epoch = walletEpoch;
+    const vault = await encryptVault(password);
+    if (epochChanged(epoch)) return;   // locked or switched while encrypting
+    downloadJson(`satofinder-encrypted-${Date.now()}.json`, vault);
     setStatus('backupStatus', 'Encrypted backup downloaded.', 'success');
   });
 
