@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-p31ykbMCkKTh4Zn+d1CkWhk2k17UUXQCS+iO4VLX3ZY=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-8QPZhUt6Fvd/yN/+1vwZnLLZZnJ97fnsQyZRtnkVvu4=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1228,6 +1228,7 @@
   function wipeWallet() {
     walletEpoch++;
     walletLoadSeq++;      // a load still in progress must not reinstall a wallet
+    if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
     closePhraseCheck();   // a generated phrase not yet loaded goes too
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
@@ -1613,17 +1614,59 @@
     $('revealSecretsBtn').textContent = reveal ? 'Hide secrets' : 'Reveal secrets';
   });
 
+  // Clears a copied secret from the clipboard after CLIPBOARD_CLEAR_MS, or at
+  // lock/clear if sooner. The page can't read the clipboard without a
+  // permission prompt, so the clear overwrites it with an empty string; any
+  // later copy from this page cancels it, a clear attempted while the page
+  // isn't focused is retried when it regains focus, and concurrent clears
+  // share one write.
+  const CLIPBOARD_CLEAR_MS = 60 * 1000;
+  const ClipboardGuard = {
+    _timer: null,
+    _due: false,
+    _clearing: null,
+    schedule() {
+      ClipboardGuard.cancel();
+      ClipboardGuard._timer = setTimeout(() => { ClipboardGuard._timer = null; ClipboardGuard.clearNow(); }, CLIPBOARD_CLEAR_MS);
+    },
+    cancel() {
+      if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+      ClipboardGuard._due = false;
+    },
+    pending() { return !!ClipboardGuard._timer || ClipboardGuard._due; },
+    clearNow() {
+      if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+      if (!ClipboardGuard._clearing) {
+        ClipboardGuard._clearing = (async () => {
+          try { await navigator.clipboard.writeText(''); ClipboardGuard._due = false; }
+          catch { ClipboardGuard._due = true; }
+          finally { ClipboardGuard._clearing = null; }
+        })();
+      }
+      return ClipboardGuard._clearing;
+    },
+    onFocus() { if (ClipboardGuard._due) ClipboardGuard.clearNow(); },
+  };
+  window.addEventListener('focus', ClipboardGuard.onFocus);
+
   document.querySelectorAll('[data-copy]').forEach(btn => btn.addEventListener('click', async () => {
     if (!state.wallet) return;
     const field = btn.dataset.copy;
     const isSecret = field === 'mnemonic' || field === 'privateKey';
     if (isSecret && !(await confirmAction('Copy secret to clipboard?', 'Clipboard contents may be readable by other applications, and may sync across your devices.'))) return;
+    if (!state.wallet) return;   // locked while the dialog was open
+    const epoch = walletEpoch;
     try {
       await navigator.clipboard.writeText(state.wallet[field]);
-      setStatus('walletStatus', `${field} copied to clipboard.`, isSecret ? 'warn' : 'success');
     } catch (e) {
       setStatus('walletStatus', `Clipboard write failed: ${e.message}`, 'error');
+      return;
     }
+    if (!isSecret) { ClipboardGuard.cancel(); setStatus('walletStatus', `${field} copied to clipboard.`, 'success'); return; }
+    // Locked while the copy was in flight: take the secret back off at once.
+    if (epochChanged(epoch)) { ClipboardGuard.clearNow(); return; }
+    ClipboardGuard.schedule();
+    setStatus('walletStatus', `${field} copied. It will be cleared from the clipboard after ${CLIPBOARD_CLEAR_MS / 1000} seconds or when the wallet locks, once this page is in front again. Closing the tab first leaves it on the clipboard.`, 'warn');
   }));
 
   const stepAddress = (chain) => {
@@ -1640,6 +1683,7 @@
   action('buildTxBtn', 'sendStatus', buildSendTransaction);
   action('copyRawTxBtn', 'sendStatus', async () => {
     await navigator.clipboard.writeText($('rawTx').value);
+    ClipboardGuard.cancel();   // the clipboard no longer holds a copied secret
     setStatus('sendStatus', 'Raw transaction copied.', 'success');
   });
 
