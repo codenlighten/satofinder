@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-1wOOBKq1vNlEpAwqSlCUzfsogw9DwMp2F7ztJWFrnAI=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-CkxjCekvi14T+9mgFNnswEQP9Za1CESkbrOwL2RMsnM=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -129,6 +129,10 @@
 // ====================== 03. CONSTANTS ======================
 const VERSION = '2.5.0';
 
+// Bitails paging, used by ENDPOINTS below (so defined before it).
+const BITAILS_BATCH = 20;       // per-request address count
+const BITAILS_PAGE = 1000;      // UTXOs per address per request
+const BITAILS_MAX_PAGES = 50;   // beyond this an address's scan is incomplete: fail
 const ENDPOINTS = Object.freeze({
   woc: {
     balance:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/balance`,
@@ -139,7 +143,11 @@ const ENDPOINTS = Object.freeze({
     price:     'https://api.whatsonchain.com/v1/bsv/main/exchangerate',
   },
   bitails: {
-    unspentMulti: 'https://api.bitails.io/address/unspent/multi',
+    // Paged per address: `from` is an item offset, `limit` the page size.
+    // The default page size is undocumented, so Recovery.scan asks for one and
+    // pages every address that has UTXOs until a page comes back empty.
+    unspentMulti: `https://api.bitails.io/address/unspent/multi?from=0&limit=${BITAILS_PAGE}`,
+    unspent:      (a, from) => `https://api.bitails.io/address/${encodeURIComponent(a)}/unspent?from=${from}&limit=${BITAILS_PAGE}`,
     historyMulti: 'https://api.bitails.io/address/history/multi',
   },
   // GorillaPool's 1Sat overlay (the per-address REST surface; distinct from
@@ -189,7 +197,6 @@ const BACKUP_CHECK_WORDS = 3;   // words asked for when confirming a new phrase 
 const CLIPBOARD_CLEAR_MS = 60 * 1000;
 const RECOVERY_DEPTH = 50;      // default addresses scanned per branch (receive + change)
 const RECOVERY_DEPTHS = [50, 100, 200, 500];   // choices offered for a deeper scan
-const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
 const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 const VAULT_KEY = 'satofinder.vault.v1';
@@ -564,6 +571,7 @@ const Net = {
     bsv20Balance: (a) => api(ENDPOINTS.gorillapool.bsv20Balance(a)),
   },
   bitails: {
+    unspent:      (a, from) => api(ENDPOINTS.bitails.unspent(a, from)),
     unspentMulti: (addrs) => api(ENDPOINTS.bitails.unspentMulti, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -583,6 +591,30 @@ const Net = {
 // fold the results into per-address records with derivation info attached so
 // the user can sweep each one.
 const Recovery = {
+  // Every UTXO of an address that has at least one: `first` is the page the
+  // batched call returned; later pages are fetched by offset until one comes
+  // back empty, which is the only reliable end marker when the server's page
+  // cap is unknown. Duplicates (the chain moved between pages) are dropped.
+  async _allUnspent(address, first) {
+    const seen = new Map();
+    const add = (list) => { for (const u of list) seen.set(`${u.txid}:${u.vout}`, u); };
+    add(first);
+    let from = first.length;
+    for (let page = 1; ; page++) {
+      if (page >= BITAILS_MAX_PAGES) {
+        throw new Error(`Too many UTXOs at ${address} to scan completely.`);
+      }
+      let rec;
+      try { rec = await Net.bitails.unspent(address, from); }
+      catch (e) { throw new Error(`bitails scan of ${address} failed at offset ${from}: ${e.message}`); }
+      const list = rec && Array.isArray(rec.unspent) ? rec.unspent : null;
+      if (!list) throw new Error('Unexpected bitails response shape');
+      if (list.length === 0) break;
+      add(list);
+      from += list.length;
+    }
+    return [...seen.values()];
+  },
   // Returns [{ path, address, wif, utxos: [normalized], totalSats }]
   // for every scanned address that has at least one UTXO.
   async scan(root, prefs, opts = {}) {
@@ -618,7 +650,8 @@ const Recovery = {
       for (const c of batch) {
         const rec = byAddr[c.address];
         if (!rec || !Array.isArray(rec.unspent) || rec.unspent.length === 0) continue;
-        const utxos = rec.unspent.map(u => ({
+        const raw = await Recovery._allUnspent(c.address, rec.unspent);
+        const utxos = raw.map(u => ({
           txid: u.txid, vout: u.vout, satoshis: u.satoshis,
           address: c.address,
           scriptHex: bsv.Script.buildPublicKeyHashOut(c.address).toHex(),
