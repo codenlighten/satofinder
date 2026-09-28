@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-y6nPYurlAAqq6m5cSRoghxg/GDFc1h4Arzy8mn7unHA=' https://cdn.jsdelivr.net;
+    script-src 'sha256-pEevVP5IfxnMCymJEFxa4ukzi6yE/oesjO5iAEbPyyY=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1158,12 +1158,18 @@ function renderRecoveryPanel(s) {
     ? s.draft.recoveryDest
     : (d ? d.address : '');
   const destId = 'recovery-dest';
-  const setDest = () => setState({ draft: { ...state.draft, recoveryDest: $(destId).value.trim() } });
-  const resetDest = () => {
-    if (!d) return;
-    const next = { ...state.draft }; delete next.recoveryDest;
+  // Changing the destination discards a prepared sweep-all plan: its
+  // transactions are already signed to the old address.
+  const setDest = () => {
+    const next = { ...state.draft, recoveryDest: $(destId).value.trim() }; delete next.sweepAllPlan;
     setState({ draft: next });
   };
+  const resetDest = () => {
+    if (!d) return;
+    const next = { ...state.draft }; delete next.recoveryDest; delete next.sweepAllPlan;
+    setState({ draft: next });
+  };
+  const plan = s.draft && s.draft.sweepAllPlan;
 
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Recovery sweep'),
@@ -1194,12 +1200,13 @@ function renderRecoveryPanel(s) {
       el('button', { disabled: s.busy, onclick: () => Actions.scanRecovery() },
         s.busy && rec && rec.scanning ? `Scanning… ${rec.done || 0}/${rec.total || ''}`
                                        : (rec ? 'Re-scan' : `Scan first ${RECOVERY_DEPTH} addresses`)),
-      rec && rec.found && rec.found.length > 1
+      rec && rec.found && rec.found.length > 1 && !plan
         ? el('button', { class: 'primary', disabled: s.busy,
-                         onclick: () => Actions.sweepAllRecovered() },
-            s.busy ? 'Sweeping…' : `Sweep all (${rec.found.length})`)
+                         onclick: () => Actions.prepareSweepAll() },
+            s.busy ? 'Building…' : `Prepare sweep of all (${rec.found.length})`)
         : null,
     ]),
+    plan ? renderSweepAllPlan(s, plan) : null,
     !rec ? null
          : !rec.found || rec.found.length === 0
            ? el('p', { class: 'muted' }, rec.scanning ? 'Scanning…' : 'No UTXOs found in scanned range.')
@@ -1211,6 +1218,38 @@ function renderRecoveryPanel(s) {
               ]),
               ...rec.found.map((item) => renderRecoveryRow(s, item, swept[item.path])),
             ]),
+  ]);
+}
+// Totals for a prepared sweep-all, built from the signed drafts themselves.
+function renderSweepAllPlan(s, plan) {
+  const sum = (k) => plan.drafts.reduce((a, d) => a + d[k], 0);
+  const protectedTotal = sum('protectedCount');
+  return el('div', { class: 'panel', style: 'border-color:var(--accent,#c90);margin-bottom:12px' }, [
+    el('h3', {}, 'Confirm sweep of all recovered addresses'),
+    plan.drafts.length === 0 ? el('p', { class: 'muted' }, 'No transaction could be built.') : el('div', {}, [
+      el('p', {}, [
+        el('strong', {}, String(plan.drafts.length)), ' separate transaction(s), one per address, sending ',
+        el('strong', {}, `${Fmt.sats(sum('sentSats'))} sats`), ' in total to ',
+      ]),
+      el('code', { style: 'display:block;margin-bottom:8px' }, plan.dest),
+      el('p', {}, ['Total miner fees: ', el('strong', {}, `${Fmt.sats(sum('fee'))} sats`),
+                   `. Total spent from these addresses: ${Fmt.sats(sum('sentSats') + sum('fee'))} sats.`]),
+      protectedTotal > 0 ? el('p', { class: 'muted', style: 'font-size:11px' },
+        `🛡 ${protectedTotal} ordinal/token or 1-sat UTXO(s) left untouched.`) : null,
+      ...plan.drafts.map((d) => el('div', { class: 'muted', style: 'font-size:11px' },
+        `${d.path} · ${Fmt.shortHash(d.fromAddress)} → ${Fmt.sats(d.sentSats)} sats (fee ${Fmt.sats(d.fee)})`)),
+    ]),
+    plan.errors.length > 0 ? el('div', { style: 'margin-top:8px' }, [
+      el('div', { class: 'warn', style: 'font-size:12px' }, `${plan.errors.length} address(es) not included:`),
+      ...plan.errors.map((e) => el('div', { class: 'muted', style: 'font-size:11px' },
+        `${e.path} · ${Fmt.shortHash(e.fromAddress)}: ${e.error}`)),
+    ]) : null,
+    el('div', { class: 'row', style: 'margin-top:12px' }, [
+      el('button', { disabled: s.busy, onclick: () => Actions.cancelSweepAll() }, 'Cancel'),
+      plan.drafts.length > 0 ? el('button', { class: 'danger', disabled: s.busy,
+                                              onclick: () => Actions.confirmSweepAll() },
+        s.busy ? 'Broadcasting…' : `Broadcast ${plan.drafts.length} transaction(s)`) : null,
+    ]),
   ]);
 }
 function renderRecoveryRow(s, item, sweepResult) {
@@ -1868,7 +1907,10 @@ const Actions = {
   async scanRecovery() {
     if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
     const session = walletSession;
-    setState({ busy: true, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
+    // A re-scan replaces the found items, so prepared sweeps built from the old
+    // results are dropped.
+    const draft = { ...state.draft }; delete draft.sweepAllPlan; delete draft.sweepPreview;
+    setState({ busy: true, draft, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
     try {
       const onProgress = (p) => {
         if (session !== walletSession) return;
@@ -2000,41 +2042,73 @@ const Actions = {
   // Bypasses the per-row preview — the destination was already set explicitly
   // at the top of the panel, and click-through preview for N items would
   // defeat the bulk action. Failures on one item don't block the others.
-  async sweepAllRecovered() {
+  // Sweep-all happens in two steps. prepareSweepAll builds and signs a draft for
+  // every unswept recovery item but broadcasts nothing; the recovery panel then
+  // shows the totals (sent, fees, destination) and confirmSweepAll broadcasts
+  // exactly those drafts. A re-scan, a destination change or a lock discards
+  // the prepared plan.
+  async prepareSweepAll() {
     const rec = state.recovery;
     if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
     const destAddress = Actions._recoveryDest();
     if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
     if (!isValidAddress(destAddress)) { Status.error('Destination must be a mainnet BSV address starting with 1 (P2PKH).'); return; }
     const swept = (state.draft && state.draft.swept) || {};
-    const pending = rec.found.filter(it => !swept[it.path]);
+    const pending = rec.found.filter(it => !(swept[it.path] && swept[it.path].ok));
     if (pending.length === 0) { Status.info('All items already swept.'); return; }
-    if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address). No per-item preview — use individual Sweep buttons for that.`)) return;
 
+    Status.clear();
     const session = walletSession;
     setState({ busy: true });
-    let ok = 0, fail = 0;
+    const drafts = [];
+    const errors = [];
     for (const item of pending) {
-      if (session !== walletSession) break;
       try {
         const draft = await Actions._buildSweepDraft(item, destAddress);
-        if (session !== walletSession) break;   // locked while building: broadcast nothing more
-        const r = await Actions._broadcastSweepDraft(draft);
-        if (r.ok) ok++; else fail++;
+        if (session !== walletSession) return;   // locked while building: keep nothing
+        drafts.push(draft);
       } catch (e) {
-        // Build failed (e.g., dust after fee on a tiny utxo). Record so row shows error.
-        const sweptNow = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
-        sweptNow[item.path] = { ok: false, error: e.message };
-        setState({ draft: { ...state.draft, swept: sweptNow } });
-        fail++;
+        if (session !== walletSession) return;
+        errors.push({ path: item.path, fromAddress: item.address, error: e.message });
       }
+    }
+    setState({
+      busy: false,
+      draft: { ...state.draft, sweepAllPlan: { dest: destAddress, drafts, errors } },
+    });
+    Status.info(drafts.length > 0
+      ? `${drafts.length} sweep transaction(s) built and signed. Review the totals, then confirm to broadcast.`
+      : 'No sweep could be built. See the reasons listed under the plan.');
+  },
+  cancelSweepAll() {
+    const next = { ...state.draft }; delete next.sweepAllPlan;
+    setState({ draft: next });
+    Status.info('Sweep-all cancelled. Nothing was broadcast.');
+  },
+  async confirmSweepAll() {
+    const plan = state.draft && state.draft.sweepAllPlan;
+    if (!plan || plan.drafts.length === 0) { Status.error('Nothing prepared to broadcast.'); return; }
+    if (Actions._recoveryDest() !== plan.dest) {
+      Status.error('The destination changed after these transactions were built. Prepare the sweep again.');
+      return;
+    }
+    const session = walletSession;
+    setState({ busy: true });
+    let ok = 0, fail = 0, skipped = 0;
+    for (const draft of plan.drafts) {
+      if (session !== walletSession) break;
+      const done = state.draft && state.draft.swept && state.draft.swept[draft.path];
+      if (done && done.ok) { skipped++; continue; }   // swept individually meanwhile
+      const r = await Actions._broadcastSweepDraft(draft);
+      if (r.ok) ok++; else fail++;
     }
     if (session !== walletSession) {
       Status.info(`Sweep-all stopped because the wallet was locked: ${ok} broadcast, ${fail} failed before that.`);
       return;
     }
-    setState({ busy: false });
-    Status.info(`Sweep-all complete: ${ok} ok, ${fail} failed.`);
+    const next = { ...state.draft }; delete next.sweepAllPlan;
+    setState({ busy: false, draft: next });
+    Status.info(`Sweep-all complete: ${ok} broadcast, ${fail} failed` + (skipped ? `, ${skipped} already swept.` : '.'));
   },
 
   // ---- export: re-verify password before revealing mnemonic + passphrase
