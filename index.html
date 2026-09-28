@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-1KNYbSr/VdHBLRojN334n1NuGaW0GGdD1goYOfu2DQ0=' https://cdn.jsdelivr.net;
+    script-src 'sha256-0M+2HDjdHERyi7ZV0DKlq1PXrFCJ8fyPhevKt8rLw2Q=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -183,6 +183,7 @@ const AUTOLOCK_MS = 10 * 60 * 1000;
 // discards any built transaction, and checking its raw hex on WhatsOnChain
 // (as the confirm screens suggest) means switching tabs.
 const HIDDEN_GRACE_MS = 60 * 1000;
+const BACKUP_CHECK_WORDS = 3;   // words asked for when confirming a new phrase is written down
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
 const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
@@ -308,6 +309,15 @@ const Vault = {
     localStorage.removeItem(PREFS_KEY);
   },
 };
+
+// A uniform random integer in [0, n) from the platform CSPRNG, by rejection
+// sampling so no value is favoured.
+function randomIndex(n) {
+  const limit = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+  return buf[0] % n;
+}
 
 // Cheap password-strength heuristic — no external lib. Returns 0..4 (zxcvbn-ish).
 function passwordStrength(p) {
@@ -1462,25 +1472,23 @@ function renderCreateShow(s) {
   ]);
 }
 function renderCreateConfirm(s) {
-  const m = (s.draft.mnemonic || '').split(/\s+/);
-  const lastIdx = m.length - 1;
-  const inputId = 'confirm-word';
+  const positions = (s.draft && s.draft.checkPositions) || [];
+  const ids = positions.map((_, k) => `confirm-word-${k}`);
+  const submit = () => Actions.checkBackupWords(ids.map(id => $(id).value));
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Confirm you wrote it down'),
-    el('p', {}, [
-      'Type the ',
-      el('strong', {}, `${lastIdx + 1}th (last) word`),
-      ' of your mnemonic:',
-    ]),
-    el('input', {
-      id: inputId, type: 'text', placeholder: 'last word', autocomplete: 'off',
-      onkeydown: (e) => { if (e.key === 'Enter') Actions.checkLastWord($(inputId).value, m[lastIdx]); },
-    }),
+    el('p', {}, 'From your written copy, type these words of your recovery phrase:'),
+    ...positions.map((pos, k) => el('div', { style: 'margin-bottom:8px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, `Word #${pos + 1}`),
+      el('input', {
+        id: ids[k], type: 'text', placeholder: `word #${pos + 1}`, autocomplete: 'off',
+        autocapitalize: 'off', spellcheck: 'false',
+        onkeydown: (e) => { if (e.key === 'Enter') submit(); },
+      }),
+    ])),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.gotoShow() }, '← Show mnemonic again'),
-      el('button', { class: 'primary',
-                     onclick: () => Actions.checkLastWord($(inputId).value, m[lastIdx]) },
-        'Continue →'),
+      el('button', { class: 'primary', onclick: submit }, 'Continue →'),
     ]),
   ]);
 }
@@ -1682,7 +1690,18 @@ const Actions = {
     }
   },
   gotoShow()     { setState({ view: 'create', step: 'show' }); },
-  gotoConfirm()  { setState({ view: 'create', step: 'confirm' }); },
+  // The backup check asks for BACKUP_CHECK_WORDS words at random positions,
+  // chosen once per phrase so re-renders and "show again" keep the same ones.
+  gotoConfirm() {
+    const words = (state.draft.mnemonic || '').split(/\s+/).filter(Boolean);
+    let positions = state.draft.checkPositions;
+    if (!Array.isArray(positions) || positions.some(i => i >= words.length)) {
+      const picked = new Set();
+      while (picked.size < Math.min(BACKUP_CHECK_WORDS, words.length)) picked.add(randomIndex(words.length));
+      positions = [...picked].sort((a, b) => a - b);
+    }
+    setState({ view: 'create', step: 'confirm', draft: { ...state.draft, checkPositions: positions } });
+  },
 
   // ---- create flow
   startCreate(entropyBits) {
@@ -1711,9 +1730,15 @@ const Actions = {
   },
   cancelCreate() { Actions.gotoLanding(); },
 
-  checkLastWord(typed, expected) {
-    if ((typed || '').trim().toLowerCase() !== (expected || '').trim().toLowerCase()) {
-      Status.error('That word doesn\'t match — check your written copy.');
+  // typed: the entered words, in the order of state.draft.checkPositions.
+  // Says only whether all match, so the check can't be solved word by word.
+  checkBackupWords(typed) {
+    const words = (state.draft.mnemonic || '').split(/\s+/).filter(Boolean);
+    const positions = state.draft.checkPositions || [];
+    const norm = (w) => (w || '').trim().toLowerCase();
+    const allMatch = positions.length > 0 && positions.every((pos, k) => norm(typed[k]) === norm(words[pos]));
+    if (!allMatch) {
+      Status.error('Those words don\'t match your recovery phrase — check your written copy.');
       return;
     }
     Status.clear();
