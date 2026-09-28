@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-rQxBIzueuZus/UZTcn+/pvaD0YQ09/671AZk1VOEPDA=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-NN5WkLrmqVEwcpg3yjqfCWE1IXlyX+5A9On4Jsid00Q=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1234,9 +1234,14 @@
   const deriveCurrent = () => setWallet(Derive.wallet($('mnemonicInput').value, $('passphrase').value, currentPath()));
 
   // Re-derive after a control change, surfacing errors instead of swallowing them.
+  // After a path control changes: re-derive the LOADED wallet at the new
+  // path. It never reads the phrase box, so a phrase that hasn't been loaded
+  // (a new one awaiting its check, or one typed but not imported) can't
+  // become the wallet this way; that only happens through Import.
   function redraw() {
-    if (!$('mnemonicInput').value.trim()) { syncPathDisplay(); return; }
-    deriveCurrent().catch(e => setStatus('walletStatus', e.message, 'error'));
+    if (!state.wallet) { syncPathDisplay(); return; }
+    setWallet(Derive.wallet(state.mnemonic, state.passphrase, currentPath()))
+      .catch(e => setStatus('walletStatus', e.message, 'error'));
   }
 
   function hideSecrets() {
@@ -1544,7 +1549,13 @@
 
   $('pathMode').addEventListener('change', () => { $('walletPreset').value = 'custom'; togglePathMode(); redraw(); });
   $('walletPreset').addEventListener('change', e => applyPreset(e.target.value));
-  $('passphrase').addEventListener('change', redraw);
+  // A different passphrase is a different wallet, so it loads through Import
+  // (which asks before replacing the loaded one), not on change.
+  $('passphrase').addEventListener('change', () => {
+    if (state.wallet && $('passphrase').value !== state.passphrase) {
+      setStatus('walletStatus', 'Passphrase changed. Click "Import / derive" to load the wallet it gives.', 'warn');
+    }
+  });
 
   // ---- new phrase: shown, checked, then loaded ------------------------------
   // A generated phrase only becomes the wallet after the user types
@@ -1568,8 +1579,9 @@
 
   // Replacing a loaded wallet with a different phrase asks first: without a
   // written phrase or a backup, the loaded one would be gone.
-  async function confirmReplaceLoaded(newPhrase) {
-    if (!state.wallet || state.mnemonic === newPhrase) return true;
+  async function confirmReplaceLoaded(newPhrase, newPassphrase = '') {
+    if (!state.wallet) return true;
+    if (newPhrase !== null && Derive.normalize(newPhrase) === state.mnemonic && newPassphrase === state.passphrase) return true;
     return confirmAction('Replace the loaded wallet?',
       'The wallet on this page will be replaced. Make sure its recovery phrase is written down or saved as an encrypted backup first.');
   }
@@ -1613,11 +1625,11 @@
   });
 
   action('importMnemonicBtn', 'walletStatus', async () => {
-    const phrase = $('mnemonicInput').value.trim().replace(/\s+/g, ' ');
-    if (pendingPhrase && phrase === pendingPhrase.phrase) {
+    const phrase = Derive.normalize($('mnemonicInput').value);
+    if (pendingPhrase && phrase === Derive.normalize(pendingPhrase.phrase)) {
       throw new Error('Confirm the new phrase with the requested words (below) to load it.');
     }
-    if (!(await confirmReplaceLoaded(phrase))) return;
+    if (!(await confirmReplaceLoaded(phrase, $('passphrase').value))) return;
     closePhraseCheck();
     await deriveCurrent();
   });
