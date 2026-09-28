@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-xF0csOEV7xMD5RaXHvsXoi5XvsuKIwEf8YggxNzHAkQ=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-/4TIDC7bhr0quM0Sr1WM3c8KIjad4xnIqlYVyqgZw4k=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1840,12 +1840,35 @@
     await setWallet(Derive.wallet(record.mnemonic, record.passphrase || '', record.path));
   }
 
+  // Re-encrypt a browser backup saved with fewer than PBKDF2_ITER iterations,
+  // keeping its exact record and createdAt. rawBefore is the stored text that
+  // was just opened; the new one is written only if it decrypts back to the
+  // same record and the stored text is still rawBefore (not replaced or
+  // deleted meanwhile). Any failure leaves the old backup in place.
+  async function upgradeStoredVault(rawBefore, password) {
+    let old;
+    try { old = JSON.parse(rawBefore); } catch { return false; }
+    const iterations = old && old.iterations === undefined ? PBKDF2_ITER_LEGACY : old && old.iterations;
+    if (!Number.isInteger(iterations) || iterations >= PBKDF2_ITER) return false;
+    const record = await decryptVault(old, password);
+    const fresh = await encryptVault(password, record);
+    if (old.createdAt) fresh.createdAt = old.createdAt;
+    const back = await decryptVault(fresh, password);
+    if (JSON.stringify(back) !== JSON.stringify(record)) return false;
+    if (localStorage.getItem(LS_VAULT) !== rawBefore) return false;
+    localStorage.setItem(LS_VAULT, JSON.stringify(fresh));
+    return true;
+  }
+  const upgradeInBackground = (raw, password) => upgradeStoredVault(raw, password)
+    .catch((e) => console.warn('Backup iteration upgrade skipped:', e && e.message));
+
   action('restoreLocalBtn', 'backupStatus', async () => {
     const raw = localStorage.getItem(LS_VAULT);
     if (!raw) throw new Error('No encrypted browser backup exists.');
     const password = $('backupPassword').value;
     if (!password) throw new Error('Enter the backup password.');
     await restore(JSON.parse(raw), password);
+    upgradeInBackground(raw, password);
     setStatus('backupStatus', 'Browser backup restored.', 'success');
   });
 
@@ -1929,6 +1952,7 @@
     const password = $('lockPassword').value;
     if (!password) throw new Error('Enter your backup password.');
     await restore(JSON.parse(raw), password);   // setWallet() releases the lock
+    upgradeInBackground(raw, password);
     setStatus('walletStatus', 'Unlocked. Wallet restored from the encrypted browser backup.', 'success');
   });
 
