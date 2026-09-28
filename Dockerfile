@@ -44,8 +44,11 @@ RUN rm /etc/nginx/conf.d/default.conf && mkdir -p /etc/nginx/snippets
 COPY nginx.conf             /etc/nginx/conf.d/satofinder.conf
 COPY security-headers.conf  /etc/nginx/snippets/security-headers.conf
 
-# Only the extracted runtime artifacts. No source, no dev tooling, no tarball.
-COPY --from=builder /out/ /usr/share/nginx/html/
+# Only the files the site serves. The tarball also carries the README and the
+# build/deploy files (so it can rebuild this image); none of those belong in
+# the web root, where nginx would serve them to anyone.
+COPY --from=builder /out/index.html /out/satofinder-modern.html /out/help.html \
+     /out/service-worker.js /out/manifest.json /out/logo2.png /usr/share/nginx/html/
 
 # nginx:alpine listens on 80 by default; CapRover/the reverse proxy upstream
 # terminates HTTPS.

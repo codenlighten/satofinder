@@ -55,7 +55,7 @@ Upgrading the SDK is deliberate: change the version in the `<script>` tag, updat
 
 The tarball is deterministic, so the printed SHA-256 can be compared across builds. `VERSION` comes from `const VERSION` in `index.html`.
 
-`Dockerfile` builds that tarball and serves it with nginx. `nginx.conf` and `security-headers.conf` add the headers a meta-tag CSP can't set: `frame-ancestors`, `X-Frame-Options`, HSTS, `Referrer-Policy` and `Permissions-Policy`. `captain-definition` deploys the same image on CapRover. Any other static host needs the equivalent headers.
+`Dockerfile` builds that tarball and serves only the site's files from it (`index.html`, `satofinder-modern.html`, `help.html`, `service-worker.js`, `manifest.json`, `logo2.png`) with nginx. `nginx.conf` and `security-headers.conf` add the headers a meta-tag CSP can't set: `frame-ancestors`, `X-Frame-Options`, HSTS, `Referrer-Policy` and `Permissions-Policy`. `captain-definition` deploys the same image on CapRover. On any other static host, upload only those six files and set the equivalent headers.
 
 ## Other files
 
