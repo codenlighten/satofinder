@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-mKr38tEfMRN6CJ336bdSCvO4T2uhwD3GlnK1hmnUg28=' https://cdn.jsdelivr.net;
+    script-src 'sha256-yzZEPMoEro56qjKSD8MvfbToigO8AwpJsdBDofygrNI=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -183,7 +183,10 @@ const AUTOLOCK_MS = 10 * 60 * 1000;
 // discards any built transaction, and checking its raw hex on WhatsOnChain
 // (as the confirm screens suggest) means switching tabs.
 const HIDDEN_GRACE_MS = 60 * 1000;
-const BACKUP_CHECK_WORDS = 3;   // words asked for when confirming a new phrase is written down
+const BACKUP_CHECK_WORDS = 3;
+// A copied secret (key, phrase, passphrase) is cleared from the clipboard
+// after this long, or at lock if sooner.
+const CLIPBOARD_CLEAR_MS = 60 * 1000;   // words asked for when confirming a new phrase is written down
 const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
 const BITAILS_BATCH = 20;       // per-request address count
 const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
@@ -1033,14 +1036,14 @@ function renderKeysPanel(s) {
   rows.push(makeKeyRow('Address', d.address, () => Actions.copy(d.address, 'Address')));
   rows.push(makeKeyRow('Public key', d.pub, () => Actions.copy(d.pub, 'Public key')));
   if (!s.hideKeys) {
-    rows.push(makeKeyRow('Private key (WIF)', d.wif, () => Actions.copy(d.wif, 'WIF'),
+    rows.push(makeKeyRow('Private key (WIF)', d.wif, () => Actions.copySecret(d.wif, 'WIF'),
       'Anyone with this string can spend coins at this address.'));
     rows.push(makeKeyRow('Mnemonic', s.wallet && s.wallet.mnemonic,
-      () => Actions.copy(s.wallet.mnemonic, 'Mnemonic'),
+      () => Actions.copySecret(s.wallet.mnemonic, 'Mnemonic'),
       'Your recovery phrase. Treat like cash.'));
     if (hasPassphrase) {
       rows.push(makeKeyRow('BIP39 passphrase', s.wallet.passphrase,
-        () => Actions.copy(s.wallet.passphrase, 'BIP39 passphrase'),
+        () => Actions.copySecret(s.wallet.passphrase, 'BIP39 passphrase'),
         'Required IN ADDITION to the mnemonic to recover this wallet.'));
     }
   } else {
@@ -1471,8 +1474,8 @@ function renderExportPanel(s) {
               ? 'Back up BOTH the mnemonic AND the BIP39 passphrase. Neither alone recovers your wallet.'
               : 'No BIP39 passphrase on this wallet — mnemonic alone recovers it.'),
           el('div', { class: 'row' }, [
-            el('button', { onclick: () => Actions.copy(exported, 'Mnemonic') }, 'Copy mnemonic'),
-            exportedPass ? el('button', { onclick: () => Actions.copy(exportedPass, 'BIP39 passphrase') }, 'Copy passphrase') : null,
+            el('button', { onclick: () => Actions.copySecret(exported, 'Mnemonic') }, 'Copy mnemonic'),
+            exportedPass ? el('button', { onclick: () => Actions.copySecret(exportedPass, 'BIP39 passphrase') }, 'Copy passphrase') : null,
             el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download encrypted backup'),
             el('button', { onclick: () => Actions.clearExport() }, 'Hide'),
           ]),
@@ -1532,7 +1535,7 @@ function renderCreateShow(s) {
     el('p', { class: 'warn' }, 'This is the ONLY way to recover your wallet. Anyone with these words can spend your coins. Write them down on paper — do not screenshot, email, or photograph.'),
     el('pre', { id: 'mnemonic-out' }, m),
     el('div', { class: 'row' }, [
-      el('button', { onclick: () => Actions.copyToClipboard(m) }, 'Copy to clipboard'),
+      el('button', { onclick: () => Actions.copySecret(m, 'Mnemonic') }, 'Copy to clipboard'),
       el('button', { onclick: () => Actions.cancelCreate() }, 'Cancel'),
       el('button', { class: 'primary', onclick: () => Actions.gotoConfirm() }, 'I have written it down →'),
     ]),
@@ -1920,12 +1923,14 @@ const Actions = {
     walletSession++;
     setState({ ...clearedWalletState(), locked: true, view: 'landing', step: null });
     AutoLock.disarm();
+    if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
     Status.info('Locked.');
   },
   confirmWipe() {
     const typed = prompt('Type DELETE to wipe the local vault. This cannot be undone.');
     if (typed !== 'DELETE') { Status.info('Wipe cancelled.'); return; }
     Vault.wipe();
+    if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
     walletSession++;
     setState({
       ...clearedWalletState(), locked: true, vaultExists: false,
@@ -1935,17 +1940,31 @@ const Actions = {
   },
 
   // ---- clipboard (no auto-copy — only on explicit click)
+  // Returns true if the text was copied. Any copy supersedes a pending
+  // secret clear: the clipboard no longer holds that secret.
   async copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
+      ClipboardGuard.cancel();
       Status.info('Copied to clipboard.');
+      return true;
     } catch {
       Status.error('Clipboard copy failed (browser blocked it).');
+      return false;
     }
   },
   copy(text, label) {
-    Actions.copyToClipboard(text).then(() => {
-      if (label) Status.info(`${label} copied.`);
+    Actions.copyToClipboard(text).then((ok) => {
+      if (ok && label) Status.info(`${label} copied.`);
+    });
+  },
+  // For keys, phrases and passphrases: the clipboard is cleared after
+  // CLIPBOARD_CLEAR_MS or at lock, whichever comes first.
+  copySecret(text, label) {
+    Actions.copyToClipboard(text).then((ok) => {
+      if (!ok) return;
+      ClipboardGuard.schedule();
+      Status.info(`${label} copied. The clipboard will be cleared in ${CLIPBOARD_CLEAR_MS / 1000} seconds or when the wallet locks.`);
     });
   },
 
@@ -2477,6 +2496,34 @@ const Wallet = {
 // Auto-lock: clear the in-RAM wallet after AUTOLOCK_MS of inactivity (or when
 // the tab becomes hidden, which is more aggressive). User can opt out by
 // staying interactive.
+// Clears a copied secret from the clipboard. A page can't read the clipboard
+// without a permission prompt, so the clear is unconditional: it overwrites
+// the clipboard with an empty string. Writing needs the page focused, so an
+// attempt made while it isn't is retried the next time it gains focus.
+const ClipboardGuard = {
+  _timer: null,
+  _due: false,
+  schedule() {
+    ClipboardGuard.cancel();
+    ClipboardGuard._timer = setTimeout(() => { ClipboardGuard._timer = null; ClipboardGuard.clearNow(); }, CLIPBOARD_CLEAR_MS);
+  },
+  cancel() {
+    if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+    ClipboardGuard._due = false;
+  },
+  pending() { return !!ClipboardGuard._timer || ClipboardGuard._due; },
+  async clearNow() {
+    if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+    try {
+      await navigator.clipboard.writeText('');
+      ClipboardGuard._due = false;
+    } catch {
+      ClipboardGuard._due = true;   // not focused: try again on focus
+    }
+  },
+  onFocus() { if (ClipboardGuard._due) ClipboardGuard.clearNow(); },
+};
+
 // Timers are the fast path; wall-clock times are the backstop. Browsers can
 // freeze a background tab's timers (memory saver, mobile) or pause them in
 // sleep, so every return to the page and every activity event re-checks the
@@ -2533,6 +2580,8 @@ const AutoLock = {
 
 function wireGlobalEvents() {
   // Reset idle timer on any interaction.
+  // A secret clear that couldn't run while the page was unfocused runs now.
+  window.addEventListener('focus', ClipboardGuard.onFocus);
   for (const ev of ['mousemove','keydown','touchstart','focus']) {
     window.addEventListener(ev, AutoLock.bump, { passive: true });
   }

@@ -31,6 +31,7 @@ python3 -m http.server 8000     # any static server works
   - The one external script, `@smartledger/bsv@7.1.0` from jsDelivr, is pinned by a SHA-384 SRI hash.
   - The inline script is pinned by its SHA-256 in the page's CSP.
   - The CSP allows network access only to `api.whatsonchain.com`, `api.bitails.io` and `ordinals.gorillapool.io`.
+- **Clipboard.** A copied private key, recovery phrase or passphrase is cleared from the clipboard after 60 seconds or when the wallet locks, whichever is first.
 - **DOM safety.** API data is rendered with `textContent`, never `innerHTML`.
 - **No offline cache.** `service-worker.js` exists only to remove the old cache-first worker from browsers that still have it registered.
 
