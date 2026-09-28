@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-3+IXqvabFxPOu5OWxxmqVBCRvPGkZMuyPU/ebikOL8c=' https://cdn.jsdelivr.net;
+    script-src 'sha256-BkVn6MeTiZZIhK2cgdig/pCquPx6Xa1Oyxm610pCIrE=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1684,7 +1684,7 @@ const Actions = {
       });
       Actions._rederive();
       Status.info('Backup restored and unlocked.' + (passphrase ? ' (BIP39 passphrase restored)' : ''));
-      AutoLock.arm();
+      AutoLock.start();
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -1805,7 +1805,7 @@ const Actions = {
       Actions._rederive();
       const passNote = passphrase ? ' (BIP39 passphrase set)' : '';
       Status.info((origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.') + passNote);
-      AutoLock.arm();
+      AutoLock.start();
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -1829,7 +1829,7 @@ const Actions = {
       });
       Actions._rederive();
       Status.info('Unlocked.');
-      AutoLock.arm();
+      AutoLock.start();
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
@@ -2393,11 +2393,18 @@ const Wallet = {
 // Auto-lock: clear the in-RAM wallet after AUTOLOCK_MS of inactivity (or when
 // the tab becomes hidden, which is more aggressive). User can opt out by
 // staying interactive.
+// Timers are the fast path; wall-clock times are the backstop. Browsers can
+// freeze a background tab's timers (memory saver, mobile) or pause them in
+// sleep, so every return to the page and every activity event re-checks the
+// elapsed time and locks if a limit has passed.
 const AutoLock = {
   _timer: null,
   _hidden: null,
+  _hiddenAt: null,     // when the tab was hidden, while it is hidden
+  _lastActive: 0,      // last activity (or unlock) that re-armed the idle timer
   arm() {
     // Resets only the idle timer: a pending hidden-tab lock must survive it.
+    AutoLock._lastActive = Date.now();
     if (AutoLock._timer) clearTimeout(AutoLock._timer);
     AutoLock._timer = setTimeout(() => {
       if (!state.locked) Actions.lock();
@@ -2406,19 +2413,37 @@ const AutoLock = {
   disarm() {
     if (AutoLock._timer) { clearTimeout(AutoLock._timer); AutoLock._timer = null; }
     if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
+    AutoLock._hiddenAt = null;
   },
-  bump() { if (!state.locked) AutoLock.arm(); },
+  // Call after any successful unlock: arms the idle timer and, if the tab is
+  // already hidden (e.g. switched away during a slow unlock), starts the grace.
+  start() {
+    AutoLock.arm();
+    if (document.visibilityState === 'hidden') AutoLock.onHidden();
+  },
+  idleExpired() { return Date.now() - AutoLock._lastActive >= AUTOLOCK_MS; },
+  bump() {
+    if (state.locked) return;
+    if (AutoLock.idleExpired()) { Actions.lock(); return; }   // timer missed (sleep/freeze)
+    AutoLock.arm();
+  },
   // Tab hidden: lock once the grace period passes, unless it comes back first.
   onHidden() {
-    if (state.locked || AutoLock._hidden) return;
+    if (state.locked) return;
+    if (AutoLock._hiddenAt === null) AutoLock._hiddenAt = Date.now();
+    if (AutoLock._hidden) return;
     AutoLock._hidden = setTimeout(() => {
       AutoLock._hidden = null;
       if (!state.locked) Actions.lock();
     }, HIDDEN_GRACE_MS);
   },
   onVisible() {
+    const hiddenFor = AutoLock._hiddenAt === null ? 0 : Date.now() - AutoLock._hiddenAt;
+    AutoLock._hiddenAt = null;
     if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
-    AutoLock.bump();
+    if (state.locked) return;
+    if (hiddenFor >= HIDDEN_GRACE_MS || AutoLock.idleExpired()) { Actions.lock(); return; }
+    AutoLock.arm();
   },
 };
 
