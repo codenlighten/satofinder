@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-EQEYSCo4sDnHZxuoKOZZknySREg7wmGZ8wskfWpeHwE=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-kbrySZWJr/VsVeVi5L2Gz8JHt1Bdf0XwDf8uA/wLGXU=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -882,6 +882,12 @@
     $('derivedPath32').value = `m/0'/${safeInt($('bip32Chain').value)}'/${safeInt($('bip32Index').value)}'`;
   }
 
+  // Bumped whenever a wallet is wiped (lock, clear) or installed. Every async
+  // action records it first and drops its result if it has changed, so
+  // nothing from a wallet, least of all a key, reappears after a lock.
+  let walletEpoch = 0;
+  const epochChanged = (epoch) => epoch !== walletEpoch;
+
   function deriveAt(chain, index) {
     if (!state.mnemonic) throw new Error('Load a wallet first.');
     return Derive.wallet(state.mnemonic, state.passphrase, pathFor(chain, index));
@@ -931,7 +937,9 @@
     if (amount <= 0) throw new Error('Amount must be at least 1 satoshi.');
 
     setStatus('sendStatus', 'Checking UTXOs against the ordinal/token indexer…');
+    const epoch = walletEpoch;
     const { spendable, protectedCount } = await spendableUtxos(state.wallet.address);
+    if (epochChanged(epoch)) return;   // locked or switched while fetching
     if (!spendable.length) {
       throw new Error(protectedCount
         ? `Every UTXO on this address holds an ordinal or token (${protectedCount}). There are no plain satoshis here to spend.`
@@ -959,20 +967,24 @@
       'success');
   }
 
-  async function scanForUtxos(count, chains, onProgress) {
+  async function scanForUtxos(count, chains, onProgress, epoch) {
     const found = [];
     let protectedTotal = 0;
     const steps = count * chains.length;
     let step = 0;
     for (const chain of chains) {
       for (let index = 0; index < count; index++) {
+        if (epochChanged(epoch)) return null;   // locked or switched: stop, keep nothing
         const wallet = deriveAt(chain, index);
         onProgress(++step, steps, wallet);
         // Any failure here aborts the whole scan by design: a partial scan
         // presented as "complete" would hide coins from a recovery sweep.
         const { spendable, protectedCount } = await spendableUtxos(wallet.address);
+        if (epochChanged(epoch)) return null;
         protectedTotal += protectedCount;
-        for (const u of spendable) found.push({ ...u, path: wallet.path, wif: wallet.privateKey });
+        // No private key is kept with the results; buildRecoveryTransaction
+        // derives it from the unlocked wallet when it signs.
+        for (const u of spendable) found.push({ ...u, path: wallet.path, chain, index });
       }
     }
     return { found, protectedTotal };
@@ -1004,8 +1016,17 @@
       .change(destination)
       .feePerKb(state.settings.feePerKb);
 
-    const keys = [...new Set(state.recoveryUtxos.map(u => u.wif))].map(wif => bsv.PrivateKey.fromWIF(wif));
-    tx.sign(keys);
+    // Keys come from the wallet that is unlocked now, and each must match the
+    // address its UTXO was found at.
+    const keys = new Map();
+    for (const u of state.recoveryUtxos) {
+      const k = `${u.chain}/${u.index}`;
+      if (keys.has(k)) continue;
+      const w = deriveAt(u.chain, u.index);
+      if (w.address !== u.address) throw new Error('The scan results belong to a different wallet. Run the scan again.');
+      keys.set(k, bsv.PrivateKey.fromWIF(w.privateKey));
+    }
+    tx.sign([...keys.values()]);
     if (!tx.isFullySigned()) throw new Error('Recovery transaction did not fully sign — refusing to continue.');
 
     const total = state.recoveryUtxos.reduce((sum, u) => sum + u.satoshis, 0);
@@ -1094,9 +1115,13 @@
   // ===========================================================================
 
   async function setWallet(wallet) {
+    const epoch = walletEpoch;
     // A fingerprint over PUBLIC data only. Hashing the mnemonic would publish a
     // verification oracle for guessed phrases in the UI and in backups.
     wallet.fingerprint = await sha256Hex(`${wallet.address}|${wallet.path}`);
+    if (epochChanged(epoch)) return;   // locked or replaced while hashing
+    walletEpoch++;
+    const previousAddress = state.wallet ? state.wallet.address : null;
 
     state.wallet = wallet;
     state.mnemonic = wallet.mnemonic;
@@ -1114,7 +1139,11 @@
     $('addressValue').textContent = wallet.address;
     $('fingerprintValue').textContent = wallet.fingerprint;
     $('sendFrom').value = wallet.address;
-    if (!$('recoveryDestination').value) $('recoveryDestination').value = wallet.address;
+    // The recovery destination follows the wallet unless the user typed a
+    // different address: a default left over from the previous wallet would
+    // sweep this wallet's coins to that one.
+    const dest = $('recoveryDestination').value.trim();
+    if (!dest || dest === previousAddress) $('recoveryDestination').value = wallet.address;
 
     $('rawTxWrap').hidden = true;
     $('recoveryRawWrap').hidden = true;
@@ -1123,7 +1152,13 @@
     $('broadcastRecoveryBtn').disabled = true;
     $('utxoResults').replaceChildren();
     $('tokenResults').replaceChildren();
+    $('historyResults').replaceChildren();
     setStatus('tokensStatus', 'No token lookup has run for this address.');
+    // Results and progress from the previous wallet (or an action still in
+    // flight for it) don't belong to this one.
+    setStatus('recoveryStatus', 'No recovery scan has run.');
+    setStatus('sendStatus', 'No transaction built.');
+    setStatus('historyStatus', 'No history search has run.');
 
     hideSecrets();
     Lock.release();
@@ -1151,6 +1186,7 @@
   // Clear wallet and by auto-lock — a lock that left the mnemonic sitting in a
   // hidden input would be decoration.
   function wipeWallet() {
+    walletEpoch++;
     Object.assign(state, {
       wallet: null, mnemonic: '', passphrase: '', balance: 0,
       builtTx: null, recoveryTx: null, recoveryUtxos: [],
@@ -1246,11 +1282,14 @@
 
   async function refreshBalance() {
     if (!state.wallet) { updateBalanceUi(); return; }
+    const epoch = walletEpoch;
     try {
       const data = await Net.woc.balance(state.wallet.address);
+      if (epochChanged(epoch)) return;
       state.balance = Number(data.confirmed || 0) + Number(data.unconfirmed || 0);
       updateBalanceUi();
     } catch (e) {
+      if (epochChanged(epoch)) return;
       setStatus('walletStatus', `Balance request failed: ${e.message}`, 'error');
     }
   }
@@ -1459,8 +1498,11 @@
     $('recoveryRawWrap').hidden = true;
     state.recoveryUtxos = [];
 
-    const { found, protectedTotal } = await scanForUtxos(count, chains, (step, steps, wallet) =>
-      setStatus('recoveryStatus', `Scanning ${step}/${steps}: ${wallet.path} — ${wallet.address}`));
+    const epoch = walletEpoch;
+    const result = await scanForUtxos(count, chains, (step, steps, wallet) =>
+      setStatus('recoveryStatus', `Scanning ${step}/${steps}: ${wallet.path} — ${wallet.address}`), epoch);
+    if (result === null || epochChanged(epoch)) return;   // locked or switched mid-scan
+    const { found, protectedTotal } = result;
 
     state.recoveryUtxos = found;
     renderUtxos(found);
@@ -1487,11 +1529,13 @@
   action('loadTokensBtn', 'tokensStatus', async () => {
     if (!state.wallet) throw new Error('Load a wallet first.');
     const address = state.wallet.address;
+    const epoch = walletEpoch;
     setStatus('tokensStatus', 'Querying the 1Sat overlay…');
     const [txos, balances] = await Promise.all([
       Net.gorillapool.unspent(address),
       Net.gorillapool.bsv20Balance(address).catch(() => []),
     ]);
+    if (epochChanged(epoch)) return;
     const ordinals = (Array.isArray(txos) ? txos : []).filter(Tokens.isProtected).map(Tokens.describeOrdinal);
     const root = $('tokenResults');
     root.replaceChildren();
@@ -1531,11 +1575,15 @@
     const byTxid = new Map();
     let step = 0;
     const steps = count * chains.length;
+    const epoch = walletEpoch;
     for (const chain of chains) {
       for (let index = 0; index < count; index++) {
+        if (epochChanged(epoch)) return;
         const wallet = deriveAt(chain, index);
         setStatus('historyStatus', `Checking ${++step}/${steps}: ${wallet.path} — ${wallet.address}`);
-        for (const row of await Net.woc.history(wallet.address) || []) {
+        const rows = await Net.woc.history(wallet.address) || [];
+        if (epochChanged(epoch)) return;
+        for (const row of rows) {
           const txid = row.tx_hash || row.txid;
           byTxid.set(txid, { ...row, txid, _address: wallet.address });
         }
