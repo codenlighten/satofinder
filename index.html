@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-r1eTxskODvFqXe9sZOFO6wA2e/t1Tokxc0F9yoHLTkw=' https://cdn.jsdelivr.net;
+    script-src 'sha256-cAana72QczztmyEzumclCztfTMUZZXdLYEeT5//wvHg=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -1697,6 +1697,7 @@ const Actions = {
   // its phrase is decrypted with the password, checked, and saved as a fresh
   // vault at the current iteration count, then the wallet opens.
   async restoreBackup(file, password, replaceTyped) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
     if (!file) { Status.error('Choose the backup file first.'); return; }
     if (!password) { Status.error('Enter the password this backup was made with.'); return; }
     if (file.size > BACKUP_MAX_BYTES) { Status.error('This file is too large to be a SatoFinder backup.'); return; }
@@ -1709,7 +1710,11 @@ const Actions = {
     try {
       const blob = Vault.parseBackup(await file.text());
       const payload = JSON.parse(await Crypto.decrypt(password, blob));   // throws 'Wrong password'
-      if (session !== walletSession) return;
+      if (session !== walletSession) {
+        // Nothing has been written yet.
+        Status.info('Restore stopped because the wallet was unlocked or locked meanwhile. Nothing was changed.');
+        return;
+      }
       const mnemonic = payload && typeof payload.mnemonic === 'string' ? payload.mnemonic.trim() : '';
       const passphrase = payload && typeof payload.passphrase === 'string' ? payload.passphrase : '';
       // isValid throws, rather than returning false, for some malformed input.
@@ -1818,6 +1823,7 @@ const Actions = {
   // BIP39 passphrase ("25th word") — different from pw1/pw2 which encrypt the
   // local vault. Both are stored in the encrypted vault blob.
   async setPassword(pw1, pw2, origin, bip39Pass, replaceTyped) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
     if (!pw1 || pw1.length < 12) { Status.error('Password must be at least 12 characters.'); return; }
     if (pw1 !== pw2) { Status.error('Passwords do not match.'); return; }
     if (passwordStrength(pw1) < 2) { Status.error('Password is too weak — mix character classes and length.'); return; }
@@ -1861,6 +1867,7 @@ const Actions = {
 
   // ---- unlock
   async unlock(password) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
     if (!password) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
     const session = walletSession;
