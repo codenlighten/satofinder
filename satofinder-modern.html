@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-NQHzqyB/oTi31KRUjuF8PmAdMXzQndAaW+G31+PHOiE=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-qAZiRhyhqFAa9hCE1XFPVN51wnEw0Ht88yk55UfXWjU=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -1175,7 +1175,7 @@
 
     hideSecrets();
     Lock.release();
-    Lock.armIdle();
+    Lock.start();
     syncNoBackupWarning();
     const note = wallet.passphrase ? ' A BIP39 passphrase is applied.' : '';
     setStatus('walletStatus', `Wallet derived at ${wallet.path}.${note} Secrets are hidden.`, 'success');
@@ -1246,28 +1246,56 @@
   // 08b. Auto-lock
   // ===========================================================================
 
+  // Timers are the fast path; wall-clock times are the backstop. Browsers can
+  // freeze a background tab's timers or pause them in sleep, so returning to
+  // the page and any activity re-check the elapsed time and lock if a limit
+  // has passed.
   const Lock = {
     engaged: false,
     _idle: null,
     _hidden: null,
+    _hiddenAt: null,   // when the tab was hidden, while it is hidden
+    _lastActive: 0,    // last activity (or wallet load) that re-armed idle
 
     armIdle() {
       Lock._clear('_idle');
       if (!state.wallet || Lock.engaged) return;
+      Lock._lastActive = Date.now();
       Lock._idle = setTimeout(() => Lock.engage(`${LOCK_IDLE_MS / 60000} minutes of inactivity`), LOCK_IDLE_MS);
     },
 
     _clear(key) { if (Lock[key]) { clearTimeout(Lock[key]); Lock[key] = null; } },
 
-    bump() { if (state.wallet && !Lock.engaged) Lock.armIdle(); },
+    // After a wallet loads: arm idle, and start the grace at once if the tab
+    // is already hidden (e.g. switched away during a slow restore).
+    start() {
+      Lock.armIdle();
+      if (document.visibilityState === 'hidden') Lock.onHidden();
+    },
+
+    idleExpired() { return Date.now() - Lock._lastActive >= LOCK_IDLE_MS; },
+
+    bump() {
+      if (!state.wallet || Lock.engaged) return;
+      if (Lock.idleExpired()) { Lock.engage(`${LOCK_IDLE_MS / 60000} minutes of inactivity`); return; }
+      Lock.armIdle();
+    },
 
     onHidden() {
       if (!state.wallet || Lock.engaged) return;
-      Lock._clear('_hidden');
+      if (Lock._hiddenAt === null) Lock._hiddenAt = Date.now();
+      if (Lock._hidden) return;
       Lock._hidden = setTimeout(() => Lock.engage('the tab was left in the background'), LOCK_HIDDEN_GRACE_MS);
     },
 
-    onVisible() { Lock._clear('_hidden'); Lock.bump(); },
+    onVisible() {
+      const hiddenFor = Lock._hiddenAt === null ? 0 : Date.now() - Lock._hiddenAt;
+      Lock._hiddenAt = null;
+      Lock._clear('_hidden');
+      if (!state.wallet || Lock.engaged) return;
+      if (hiddenFor >= LOCK_HIDDEN_GRACE_MS) { Lock.engage('the tab was left in the background'); return; }
+      Lock.bump();
+    },
 
     // Wipes first, then explains. Nothing here can throw between the two.
     engage(reason) {
@@ -1275,6 +1303,7 @@
       const vaulted = hasVault();
       Lock._clear('_idle');
       Lock._clear('_hidden');
+      Lock._hiddenAt = null;
       wipeWallet();
       Lock.engaged = true;
       $('lockBar').hidden = false;
@@ -1283,7 +1312,7 @@
       $('lockText').textContent = vaulted
         ? 'Your keys were cleared from this page. Enter your backup password to restore the encrypted wallet saved in this browser.'
         : 'Your keys were cleared from this page. No encrypted backup is saved here, so re-import your mnemonic phrase below to continue.';
-      setStatus('walletStatus', 'Wallet locked. Keys have been cleared from memory.', 'warn');
+      setStatus('walletStatus', 'Wallet locked. Keys have been cleared from this page.', 'warn');
     },
 
     release() {
