@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-cAana72QczztmyEzumclCztfTMUZZXdLYEeT5//wvHg=' https://cdn.jsdelivr.net;
+    script-src 'sha256-+lDyjNF8p6+jFaTWKagsWmOGB9fRyH3lEPkp04KoIZs=' https://cdn.jsdelivr.net;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -284,6 +284,25 @@ const Vault = {
     if (!obj.mnemonic || typeof obj.mnemonic !== 'string') throw new Error('Vault payload corrupt');
     // Older (pre-2.1) vaults are missing the passphrase field — default to ''.
     return { mnemonic: obj.mnemonic, passphrase: typeof obj.passphrase === 'string' ? obj.passphrase : '' };
+  },
+  raw() {
+    try { return localStorage.getItem(VAULT_KEY); } catch { return null; }
+  },
+  // Re-encrypt a vault saved with fewer than PBKDF2_ITER iterations, keeping
+  // its exact contents. rawBefore is the stored text the caller unlocked; the
+  // new blob is written only if it decrypts back to the same plaintext and
+  // the stored vault is still that text (not wiped or replaced meanwhile).
+  // Returns true if it upgraded. Any failure leaves the old vault in place.
+  async upgradeIfNeeded(password, rawBefore) {
+    let old;
+    try { old = JSON.parse(rawBefore); } catch { return false; }
+    if (!old || !Number.isInteger(old.iter) || old.iter >= PBKDF2_ITER) return false;
+    const plaintext = await Crypto.decrypt(password, old);
+    const fresh = await Crypto.encrypt(password, plaintext);
+    if (await Crypto.decrypt(password, fresh) !== plaintext) return false;
+    if (Vault.raw() !== rawBefore) return false;
+    localStorage.setItem(VAULT_KEY, JSON.stringify(fresh));
+    return true;
   },
   // Validate a downloaded backup file's text before any key derivation runs.
   // Returns the encrypted blob; throws a readable error for anything else.
@@ -1871,6 +1890,7 @@ const Actions = {
     if (!password) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
     const session = walletSession;
+    const rawBefore = Vault.raw();   // for the in-place iteration upgrade below
     try {
       const { mnemonic, passphrase } = await Vault.unlock(password);
       if (session !== walletSession) return;   // locked or wiped while decrypting
@@ -1883,6 +1903,11 @@ const Actions = {
       Actions._rederive();
       Status.info('Unlocked.');
       AutoLock.start();
+      // Bring an older vault up to the current iteration count, in the
+      // background: the wallet is already open, and failure keeps the old one.
+      Vault.upgradeIfNeeded(password, rawBefore).catch((e) => {
+        console.warn('Vault iteration upgrade skipped:', e && e.message);
+      });
     } catch (e) {
       if (session !== walletSession) return;
       setState({ busy: false });
