@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-4F8DOEmPPZoPzMxrl20FIMCOzTPipOuVj/QcXr0M70k=' https://cdn.jsdelivr.net;
+    script-src 'sha256-JwJS02ZHR2op24MpW4BtC6XL/AItpUJ3HeB0Z96PhA0=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://api.bitails.io https://ordinals.gorillapool.io;
@@ -129,17 +129,30 @@
 // ====================== 03. CONSTANTS ======================
 const VERSION = '2.5.0';
 
+// WhatsOnChain and Bitails paging, used by ENDPOINTS below (so defined before it).
+const WOC_UTXO_PAGE = 1000;
+const WOC_UTXO_MAX_PAGES = 50;
+const BITAILS_BATCH = 20;       // per-request address count
+const BITAILS_PAGE = 1000;      // UTXOs per address per request
+const BITAILS_MAX_PAGES = 50;   // beyond this an address's scan is incomplete: fail
 const ENDPOINTS = Object.freeze({
   woc: {
     balance:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/balance`,
-    unspent:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/unspent`,
+    // The documented, paged UTXO listing (the older /unspent is no longer in
+    // WhatsOnChain's docs); Net.woc.unspent follows nextPageToken to the end.
+    unspentAll: (a, token) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/unspent/all?limit=${WOC_UTXO_PAGE}`
+                + (token ? `&token=${encodeURIComponent(token)}` : ''),
     history:  (a) => `https://api.whatsonchain.com/v1/bsv/main/address/${encodeURIComponent(a)}/history`,
     txInfo:   (h) => `https://api.whatsonchain.com/v1/bsv/main/tx/hash/${encodeURIComponent(h)}`,
     broadcast: 'https://api.whatsonchain.com/v1/bsv/main/tx/raw',
     price:     'https://api.whatsonchain.com/v1/bsv/main/exchangerate',
   },
   bitails: {
-    unspentMulti: 'https://api.bitails.io/address/unspent/multi',
+    // Paged per address: `from` is an item offset, `limit` the page size.
+    // The default page size is undocumented, so Recovery.scan asks for one and
+    // pages every address that has UTXOs until a page comes back empty.
+    unspentMulti: `https://api.bitails.io/address/unspent/multi?from=0&limit=${BITAILS_PAGE}`,
+    unspent:      (a, from) => `https://api.bitails.io/address/${encodeURIComponent(a)}/unspent?from=${from}&limit=${BITAILS_PAGE}`,
     historyMulti: 'https://api.bitails.io/address/history/multi',
   },
   // GorillaPool's 1Sat overlay (the per-address REST surface; distinct from
@@ -150,7 +163,12 @@ const ENDPOINTS = Object.freeze({
   // could burn an NFT / destroy a token. Hard-block on unavailability is the
   // safe default in Tokens.fetchProtected().
   gorillapool: {
-    unspent:       (a) => `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent`,
+    // Paged: the endpoint defaults to 100 rows and to non-BSV-20 outputs only;
+    // `bsv20=true` returns the BSV-20 outputs instead. Tokens.protectedSet()
+    // walks both, every page.
+    unspent:       (a, offset = 0, bsv20 = false) =>
+                     `https://ordinals.gorillapool.io/api/txos/address/${encodeURIComponent(a)}/unspent` +
+                     `?limit=${ORDINALS_PAGE}&offset=${offset}` + (bsv20 ? '&bsv20=true' : ''),
     bsv20Balance:  (a) => `https://ordinals.gorillapool.io/api/bsv20/${encodeURIComponent(a)}/balance`,
   },
 });
@@ -171,11 +189,27 @@ const PRESETS = Object.freeze({
 const DEFAULT_FEE_PER_KB = 100; // sat/KB. User-adjustable (Prefs.feePerKb) so a
                                 // network fee-floor change needs no redeploy.
 const MAX_FEE_PER_KB = 100000;  // sanity ceiling on user input (0.001 BSV/KB)
-const PBKDF2_ITER = 310000;     // OWASP 2023 minimum for PBKDF2-SHA256
+const PBKDF2_ITER = 600000;     // OWASP 2023 recommendation for PBKDF2-SHA256 (new vaults)
+const PBKDF2_ITER_LEGACY = 310000;  // what a vault without a recorded count was saved with
 const AUTOLOCK_MS = 10 * 60 * 1000;
-const RECOVERY_DEPTH = 50;      // addresses scanned per branch (receive + change)
-const BITAILS_BATCH = 20;       // per-request address count
+// A hidden tab locks after this grace period rather than at once. Locking
+// discards any built transaction, and checking its raw hex on WhatsOnChain
+// (as the confirm screens suggest) means switching tabs.
+const HIDDEN_GRACE_MS = 60 * 1000;
+const BACKUP_CHECK_WORDS = 3;   // words asked for when confirming a new phrase is written down
+// A copied secret (key, phrase, passphrase) is cleared from the clipboard
+// after this long, or at lock if sooner.
+const CLIPBOARD_CLEAR_MS = 60 * 1000;
+const RECOVERY_DEPTH = 50;      // default addresses scanned per branch (receive + change)
+const RECOVERY_DEPTHS = [50, 100, 200, 500];   // choices offered for a deeper scan
+const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
+const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 const VAULT_KEY = 'satofinder.vault.v1';
+// Limits for a backup file being restored. A real one is about 1 KB; the
+// iteration bounds keep a crafted file from forcing a weak or an endless KDF.
+const BACKUP_MAX_BYTES = 64 * 1024;
+const BACKUP_MIN_ITER = 100000;
+const BACKUP_MAX_ITER = 10000000;
 const PREFS_KEY = 'satofinder.prefs.v1';
 const TIPPING_ADDRESS = '139Gv2y2JcjCNdnJNS3kWGm36mjjespfQc';
 
@@ -230,7 +264,7 @@ const Crypto = {
     const salt = Crypto.b64dec(blob.salt);
     const iv   = Crypto.b64dec(blob.iv);
     const ct   = Crypto.b64dec(blob.ct);
-    const key  = await Crypto.deriveKey(password, salt, blob.iter || PBKDF2_ITER);
+    const key  = await Crypto.deriveKey(password, salt, blob.iter || PBKDF2_ITER_LEGACY);
     let plain;
     try {
       plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
@@ -253,10 +287,18 @@ const Vault = {
   read() {
     try { return JSON.parse(localStorage.getItem(VAULT_KEY)); } catch { return null; }
   },
-  async save(mnemonic, password, passphrase = '') {
+  // seal() does the slow encryption and writes nothing; commit() writes
+  // synchronously. Callers that can be cancelled seal first, re-check that
+  // nothing changed meanwhile, and only then commit.
+  async seal(mnemonic, password, passphrase = '') {
     const payload = JSON.stringify({ mnemonic, passphrase, createdAt: Date.now() });
-    const blob = await Crypto.encrypt(password, payload);
+    return Crypto.encrypt(password, payload);
+  },
+  commit(blob) {
     localStorage.setItem(VAULT_KEY, JSON.stringify(blob));
+  },
+  async save(mnemonic, password, passphrase = '') {
+    Vault.commit(await Vault.seal(mnemonic, password, passphrase));
   },
   async unlock(password) {
     const blob = Vault.read();
@@ -267,11 +309,58 @@ const Vault = {
     // Older (pre-2.1) vaults are missing the passphrase field — default to ''.
     return { mnemonic: obj.mnemonic, passphrase: typeof obj.passphrase === 'string' ? obj.passphrase : '' };
   },
+  raw() {
+    try { return localStorage.getItem(VAULT_KEY); } catch { return null; }
+  },
+  // Re-encrypt a vault saved with fewer than PBKDF2_ITER iterations, keeping
+  // its exact contents. rawBefore is the stored text the caller unlocked; the
+  // new blob is written only if it decrypts back to the same plaintext and
+  // the stored vault is still that text (not wiped or replaced meanwhile).
+  // Returns true if it upgraded. Any failure leaves the old vault in place.
+  async upgradeIfNeeded(password, rawBefore) {
+    let old;
+    try { old = JSON.parse(rawBefore); } catch { return false; }
+    if (!old || !Number.isInteger(old.iter) || old.iter >= PBKDF2_ITER) return false;
+    const plaintext = await Crypto.decrypt(password, old);
+    const fresh = await Crypto.encrypt(password, plaintext);
+    if (await Crypto.decrypt(password, fresh) !== plaintext) return false;
+    if (Vault.raw() !== rawBefore) return false;
+    localStorage.setItem(VAULT_KEY, JSON.stringify(fresh));
+    return true;
+  },
+  // Validate a downloaded backup file's text before any key derivation runs.
+  // Returns the encrypted blob; throws a readable error for anything else.
+  parseBackup(text) {
+    let blob;
+    try { blob = JSON.parse(text); } catch { throw new Error('This is not a SatoFinder backup file (not JSON).'); }
+    const isB64 = (x) => typeof x === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(x);
+    if (!blob || typeof blob !== 'object' || blob.v !== 1 || blob.kdf !== 'PBKDF2-SHA256') {
+      throw new Error('This is not a SatoFinder backup file (unknown format).');
+    }
+    if (!Number.isInteger(blob.iter) || blob.iter < BACKUP_MIN_ITER || blob.iter > BACKUP_MAX_ITER) {
+      throw new Error('This backup file has an invalid key-derivation setting.');
+    }
+    if (!isB64(blob.salt) || !isB64(blob.iv) || !isB64(blob.ct)
+        || Crypto.b64dec(blob.salt).length !== 16 || Crypto.b64dec(blob.iv).length !== 12
+        || Crypto.b64dec(blob.ct).length < 17) {
+      throw new Error('This backup file is damaged or incomplete.');
+    }
+    return { v: 1, kdf: blob.kdf, iter: blob.iter, salt: blob.salt, iv: blob.iv, ct: blob.ct };
+  },
   wipe() {
     localStorage.removeItem(VAULT_KEY);
     localStorage.removeItem(PREFS_KEY);
   },
 };
+
+// A uniform random integer in [0, n) from the platform CSPRNG, by rejection
+// sampling so no value is favoured.
+function randomIndex(n) {
+  const limit = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+  return buf[0] % n;
+}
 
 // Cheap password-strength heuristic — no external lib. Returns 0..4 (zxcvbn-ish).
 function passwordStrength(p) {
@@ -317,6 +406,7 @@ const state = {
   // ui prefs
   hideKeys: true,
   feePerKb: DEFAULT_FEE_PER_KB,             // sat/KB used by send + sweep
+  recoveryDepth: RECOVERY_DEPTH,            // addresses per branch the recovery scan covers
 
   // send flow — set by Actions.buildSend, cleared by cancel/broadcast
   draftTx: null,                           // { tx, hex, txid, to, sentSats, changeSats, fee, vsize }
@@ -412,8 +502,19 @@ const TxBuilder = {
     }
     t2.sign(privateKey);
 
+    // Report what the signed transaction actually does, not the plan: a dust
+    // change output folded into the fee makes the real fee larger than `fee`.
+    if (!t2.isFullySigned() || t2.verify() !== true) throw new Error('Transaction did not sign correctly — nothing was built.');
+    const outs = t2.outputs;
+    const paysTo = (o, a) => { try { return o.script.toAddress('livenet').toString() === a; } catch { return false; } };
+    const expectedOutputs = changeSats > 0 ? 2 : 1;
+    if (outs.length !== expectedOutputs || !paysTo(outs[0], toAddress) || outs[0].satoshis !== sentSats
+        || (changeSats > 0 && (!paysTo(outs[1], fromAddress) || outs[1].satoshis !== changeSats))) {
+      throw new Error('Internal check failed: the signed outputs do not match the request — nothing was built.');
+    }
+    const signedFee = totalIn - outs.reduce((a, o) => a + o.satoshis, 0);
     const hex = t2.toString();
-    return { tx: t2, hex, txid: t2.hash, fee, sentSats, changeSats, vsize, feePerKb };
+    return { tx: t2, hex, txid: t2.hash, fee: signedFee, sentSats, changeSats, vsize: t2.toBuffer().length, feePerKb };
   },
 };
 
@@ -460,7 +561,26 @@ async function api(url, opts = {}) {
 const Net = {
   woc: {
     balance:    (a) => api(ENDPOINTS.woc.balance(a)),
-    unspent:    (a) => api(ENDPOINTS.woc.unspent(a)),
+    // Every UTXO of the address across all pages, minus outputs already spent
+    // by an unconfirmed transaction. Throws rather than return a partial list.
+    unspent:    async (a) => {
+                  const seen = new Map();
+                  let token = '';
+                  const used = new Set();   // a token seen twice would page forever
+                  for (let page = 0; page < WOC_UTXO_MAX_PAGES; page++) {
+                    const body = await api(ENDPOINTS.woc.unspentAll(a, token));
+                    if (!body || !Array.isArray(body.result)) throw new Error('Unexpected unspent response');
+                    for (const u of body.result) {
+                      if (u.isSpentInMempoolTx) continue;
+                      seen.set(`${u.tx_hash}:${u.tx_pos}`, u);
+                    }
+                    const next = body.nextPageToken || '';
+                    if (!next) return [...seen.values()];
+                    if (used.has(next)) throw new Error('WhatsOnChain repeated a UTXO page; the list may be incomplete.');
+                    used.add(next); token = next;
+                  }
+                  throw new Error('Too many UTXOs at this address to list completely.');
+                },
     history:    (a) => api(ENDPOINTS.woc.history(a)),
     txInfo:     (h) => api(ENDPOINTS.woc.txInfo(h)),
     price:      ()  => api(ENDPOINTS.woc.price),
@@ -471,10 +591,11 @@ const Net = {
                 }),
   },
   gorillapool: {
-    unspent:      (a) => api(ENDPOINTS.gorillapool.unspent(a)),
+    unspent:      (a, offset, bsv20) => api(ENDPOINTS.gorillapool.unspent(a, offset, bsv20)),
     bsv20Balance: (a) => api(ENDPOINTS.gorillapool.bsv20Balance(a)),
   },
   bitails: {
+    unspent:      (a, from) => api(ENDPOINTS.bitails.unspent(a, from)),
     unspentMulti: (addrs) => api(ENDPOINTS.bitails.unspentMulti, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -494,6 +615,30 @@ const Net = {
 // fold the results into per-address records with derivation info attached so
 // the user can sweep each one.
 const Recovery = {
+  // Every UTXO of an address that has at least one: `first` is the page the
+  // batched call returned; later pages are fetched by offset until one comes
+  // back empty, which is the only reliable end marker when the server's page
+  // cap is unknown. Duplicates (the chain moved between pages) are dropped.
+  async _allUnspent(address, first) {
+    const seen = new Map();
+    const add = (list) => { for (const u of list) seen.set(`${u.txid}:${u.vout}`, u); };
+    add(first);
+    let from = first.length;
+    for (let page = 1; ; page++) {
+      if (page >= BITAILS_MAX_PAGES) {
+        throw new Error(`Too many UTXOs at ${address} to scan completely.`);
+      }
+      let rec;
+      try { rec = await Net.bitails.unspent(address, from); }
+      catch (e) { throw new Error(`bitails scan of ${address} failed at offset ${from}: ${e.message}`); }
+      const list = rec && Array.isArray(rec.unspent) ? rec.unspent : null;
+      if (!list) throw new Error('Unexpected bitails response shape');
+      if (list.length === 0) break;
+      add(list);
+      from += list.length;
+    }
+    return [...seen.values()];
+  },
   // Returns [{ path, address, wif, utxos: [normalized], totalSats }]
   // for every scanned address that has at least one UTXO.
   async scan(root, prefs, opts = {}) {
@@ -529,7 +674,8 @@ const Recovery = {
       for (const c of batch) {
         const rec = byAddr[c.address];
         if (!rec || !Array.isArray(rec.unspent) || rec.unspent.length === 0) continue;
-        const utxos = rec.unspent.map(u => ({
+        const raw = await Recovery._allUnspent(c.address, rec.unspent);
+        const utxos = raw.map(u => ({
           txid: u.txid, vout: u.vout, satoshis: u.satoshis,
           address: c.address,
           scriptHex: bsv.Script.buildPublicKeyHashOut(c.address).toHex(),
@@ -563,26 +709,46 @@ const Tokens = {
     if (!o) return false;
     return !!(o.insc || o.bsv20 || o.lock);
   },
-  // Returns a Set of "txid:vout" strings for every protected UTXO at addr.
-  // Throws on indexer error — callers MUST catch and block the spend.
+  // Returns a Set of "txid:vout" strings for every protected UTXO at addr:
+  // every page of the plain listing (ordinals / locks), and every output of
+  // the BSV-20 listing. Throws on indexer error or an incomplete scan — callers
+  // MUST catch and block the spend.
   async protectedSet(addr) {
-    let raw;
-    try { raw = await Net.gorillapool.unspent(addr); }
-    catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build transaction — cannot verify UTXOs are safe to spend.`); }
-    if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned unexpected shape — refusing to build.');
     const set = new Set();
-    for (const t of raw) {
-      if (Tokens.isProtected(t)) set.add(`${t.txid}:${t.vout}`);
+    const outpointOf = (t) => {
+      if (typeof t.txid === 'string' && Number.isInteger(t.vout)) return `${t.txid}:${t.vout}`;
+      const m = typeof t.outpoint === 'string' && t.outpoint.match(/^([0-9a-f]{64})_(\d+)$/);
+      if (m) return `${m[1]}:${m[2]}`;
+      throw new Error('Ordinal/token indexer returned an output without an outpoint — refusing to build.');
+    };
+    for (const bsv20 of [false, true]) {
+      for (let page = 0, offset = 0; ; page++) {
+        if (page >= ORDINALS_MAX_PAGES) {
+          throw new Error('Too many ordinal/token outputs to check completely. Refusing to build — cannot verify UTXOs are safe to spend.');
+        }
+        let raw;
+        try { raw = await Net.gorillapool.unspent(addr, offset, bsv20); }
+        catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build transaction — cannot verify UTXOs are safe to spend.`); }
+        if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned unexpected shape — refusing to build.');
+        for (const t of raw) {
+          // Everything the BSV-20 listing returns is a token output.
+          if (bsv20 || Tokens.isProtected(t)) set.add(outpointOf(t));
+        }
+        if (raw.length < ORDINALS_PAGE) break;
+        offset += raw.length;
+      }
     }
     return set;
   },
-  // Filter a normalized UTXO list against a protected Set. Returns
+  // Filter a normalized UTXO list against a protected Set. Every 1-sat output
+  // is held back too: that is where ordinals live, and an indexer can lag
+  // behind an ordinal that has just arrived. Returns
   // { spendable: [...], protectedCount: N }.
   filter(utxos, protectedSet) {
     const out = [];
     let pc = 0;
     for (const u of utxos) {
-      if (protectedSet.has(`${u.txid}:${u.vout}`)) pc++; else out.push(u);
+      if (u.satoshis === 1 || protectedSet.has(`${u.txid}:${u.vout}`)) pc++; else out.push(u);
     }
     return { spendable: out, protectedCount: pc };
   },
@@ -628,8 +794,11 @@ function sanitizeFeePerKb(value, fallback = DEFAULT_FEE_PER_KB) {
 }
 
 // Address validity (network-aware via SDK). Returns true/false.
+// Mainnet P2PKH only: fromString() also accepts testnet addresses (coins sent
+// there land on a mainnet script nobody expects) and P2SH, which BSV no
+// longer treats as script-hash since Genesis.
 function isValidAddress(addr) {
-  try { return !!bsv.Address.fromString(addr); } catch { return false; }
+  try { return bsv.Address.isValid(addr, 'livenet', 'pubkeyhash'); } catch { return false; }
 }
 
 // Format helpers (pure, no DOM).
@@ -663,7 +832,11 @@ function el(tag, attrs = {}, children = []) {
     if (k === 'class')       n.className = v;
     else if (k === 'dataset') Object.assign(n.dataset, v);
     else if (k === 'style')   n.setAttribute('style', String(v));
-    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else if (k.startsWith('on') && typeof v === 'function') {
+      n.addEventListener(k.slice(2), v);
+      // A field with a change handler commits its value to state; see renderApp.
+      if (k === 'onchange') n.dataset.commits = '1';
+    }
     else if (k === 'href' || k === 'src') n.setAttribute(k, safeUrl(v));
     else n.setAttribute(k, String(v));
   }
@@ -679,8 +852,61 @@ function el(tag, attrs = {}, children = []) {
 // Per-panel renderers. Each owns one DOM region and is pure (state) => void.
 // renderApp is a view dispatcher; the real per-section panels (keys, balance,
 // send, history, recovery) arrive in later phases.
+// Every state change re-renders the whole view, which would wipe anything
+// typed but not yet submitted. Within the same view and step, carry over each
+// id'd field the user edited, plus focus and caret, into the new DOM. A field
+// whose rendered default changed (state set it on purpose, e.g. "Use current")
+// takes the new value; nothing carries across a view change (lock, unlock).
+let lastRenderKey = null;
+// Fields to leave empty on the next render even within the same view: set
+// after a success so a finished form can't be resubmitted by accident.
+const fieldsToClear = new Set();
+function clearFieldsOnNextRender(...ids) { for (const id of ids) fieldsToClear.add(id); }
+// Fields whose value was just committed through their change handler show
+// what state now holds on the next render, not the typed text: the handler
+// may have rejected or normalised it (a fee of 0 stays 100, a negative path
+// index becomes 0). Fields without a handler keep the typed text as before.
+const fieldsCommitted = new Set();
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t && t.id && t.dataset && t.dataset.commits) fieldsCommitted.add(t.id);
+}, true);
+function snapshotFields(root) {
+  const fields = {};
+  for (const f of root.querySelectorAll('input[id], textarea[id], select[id]')) {
+    fields[f.id] = { value: f.value, defaultValue: f.defaultValue, checked: f.checked,
+                     defaultChecked: f.defaultChecked, files: f.type === 'file' ? f.files : null };
+  }
+  const a = document.activeElement;
+  const focus = a && a.id && root.contains(a)
+    ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
+  return { fields, focus };
+}
+function restoreFields(root, snap) {
+  for (const [id, old] of Object.entries(snap.fields)) {
+    if (fieldsToClear.has(id) || fieldsCommitted.has(id)) continue;
+    const f = root.querySelector(`#${CSS.escape(id)}`);
+    if (!f) continue;
+    if (f.type === 'file') { if (old.files && old.files.length) f.files = old.files; continue; }
+    if (f.type === 'checkbox' || f.type === 'radio') {
+      if (f.defaultChecked === old.defaultChecked) f.checked = old.checked;
+      continue;
+    }
+    if (f.defaultValue === old.defaultValue && f.value !== old.value) f.value = old.value;
+  }
+  if (snap.focus) {
+    const f = root.querySelector(`#${CSS.escape(snap.focus.id)}`);
+    if (f) {
+      f.focus();
+      try { if (snap.focus.start != null) f.setSelectionRange(snap.focus.start, snap.focus.end); } catch { /* not a text field */ }
+    }
+  }
+}
 function renderApp(s) {
   const root = $('app');
+  const key = `${s.view}|${s.step || ''}`;
+  const snap = key === lastRenderKey ? snapshotFields(root) : null;
+  lastRenderKey = key;
   while (root.firstChild) root.removeChild(root.firstChild);
   let view;
   switch (s.view) {
@@ -688,10 +914,14 @@ function renderApp(s) {
     case 'create':   view = renderCreate(s);  break;
     case 'import':   view = renderImport(s);  break;
     case 'unlock':   view = renderUnlock(s);  break;
+    case 'restore':  view = renderRestore(s); break;
     case 'unlocked': view = renderUnlockedPlaceholder(s); break;
     default:         view = renderLanding(s);
   }
   root.appendChild(view);
+  if (snap) restoreFields(root, snap);
+  fieldsToClear.clear();
+  fieldsCommitted.clear();
 }
 
 function renderLanding(s) {
@@ -719,6 +949,11 @@ function renderLanding(s) {
       el('h2', {}, 'Import existing mnemonic'),
       el('button', { onclick: () => Actions.startImport() }, 'Import 12/24-word phrase'),
     ]),
+    el('div', { class: 'panel' }, [
+      el('h2', {}, 'Restore encrypted backup'),
+      el('p', { class: 'muted' }, 'Open a file saved with "Download encrypted backup", using the password it was made with.'),
+      el('button', { onclick: () => Actions.gotoRestore() }, 'Restore from backup file'),
+    ]),
     haveVault ? el('div', { class: 'panel' }, [
       el('h2', {}, 'Danger zone'),
       el('p', { class: 'muted' }, 'If you have forgotten your password, you must wipe the local vault and re-import the mnemonic. There is no password recovery — the encrypted blob is the only source of truth.'),
@@ -737,6 +972,34 @@ function renderImport(s) {
   if (s.step === 'enter') return renderImportEnter(s);
   if (s.step === 'password') return renderSetPassword(s, 'import');
   return renderLanding(s);
+}
+function renderRestore(s) {
+  const fileId = 'restore-file', passId = 'pw-restore', replaceId = 'restore-replace';
+  const replacing = Vault.exists();
+  const submit = () => Actions.restoreBackup(
+    $(fileId).files && $(fileId).files[0], $(passId).value, replacing ? $(replaceId).value : '');
+  return el('div', { class: 'panel' }, [
+    el('h2', {}, 'Restore encrypted backup'),
+    el('p', { class: 'muted' }, 'Choose the backup file and enter the password it was made with. The file never leaves this browser; its recovery phrase is re-encrypted into this device\'s vault with the same password.'),
+    el('input', { id: fileId, type: 'file', accept: 'application/json,.json' }),
+    el('input', { id: passId, type: 'password', placeholder: 'Backup password', autocomplete: 'current-password',
+                  onkeydown: (e) => { if (e.key === 'Enter') submit(); } }),
+    replacing
+      ? el('div', { style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' }, [
+          el('div', { class: 'err', style: 'font-size:12px;margin-bottom:8px' },
+            'A wallet vault already exists on this device. Restoring will permanently replace it. ' +
+            'Unless you have its mnemonic written down, download its encrypted backup first.'),
+          el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download backup of the existing vault'),
+          el('input', { id: replaceId, type: 'text', placeholder: 'Type REPLACE to overwrite the existing vault',
+                        autocomplete: 'off', spellcheck: 'false', style: 'margin-top:8px' }),
+        ])
+      : null,
+    el('div', { class: 'row', style: 'margin-top:16px' }, [
+      el('button', { onclick: () => Actions.gotoLanding() }, 'Back'),
+      el('button', { class: 'primary', disabled: s.busy, onclick: submit },
+        s.busy ? 'Restoring…' : (replacing ? 'Replace vault & unlock' : 'Restore & unlock')),
+    ]),
+  ]);
 }
 function renderUnlock(s) {
   const passId = 'pw-unlock';
@@ -854,14 +1117,14 @@ function renderKeysPanel(s) {
   rows.push(makeKeyRow('Address', d.address, () => Actions.copy(d.address, 'Address')));
   rows.push(makeKeyRow('Public key', d.pub, () => Actions.copy(d.pub, 'Public key')));
   if (!s.hideKeys) {
-    rows.push(makeKeyRow('Private key (WIF)', d.wif, () => Actions.copy(d.wif, 'WIF'),
+    rows.push(makeKeyRow('Private key (WIF)', d.wif, () => Actions.copySecret(d.wif, 'WIF'),
       'Anyone with this string can spend coins at this address.'));
     rows.push(makeKeyRow('Mnemonic', s.wallet && s.wallet.mnemonic,
-      () => Actions.copy(s.wallet.mnemonic, 'Mnemonic'),
+      () => Actions.copySecret(s.wallet.mnemonic, 'Mnemonic'),
       'Your recovery phrase. Treat like cash.'));
     if (hasPassphrase) {
       rows.push(makeKeyRow('BIP39 passphrase', s.wallet.passphrase,
-        () => Actions.copy(s.wallet.passphrase, 'BIP39 passphrase'),
+        () => Actions.copySecret(s.wallet.passphrase, 'BIP39 passphrase'),
         'Required IN ADDITION to the mnemonic to recover this wallet.'));
     }
   } else {
@@ -956,7 +1219,7 @@ function renderTokensPanel(s) {
     !d ? el('p', { class: 'muted' }, 'No address derived.')
        : el('div', {}, [
         el('p', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
-          'Read-only view of 1Sat ordinals and BSV-20 tokens at the current address (via ordinals.gorillapool.io). These UTXOs are automatically excluded from Send and Sweep so you can\'t accidentally burn them.'),
+          'Read-only view of 1Sat ordinals and BSV-20 tokens at the current address (via ordinals.gorillapool.io). These UTXOs, and every 1-sat output (which may hold an ordinal the indexer has not seen yet), are excluded from Send and Sweep; if the indexer cannot be checked completely, nothing is spent.'),
         el('div', { class: 'row', style: 'margin-bottom:8px' }, [
           el('button', { disabled: s.busy, onclick: () => Actions.loadTokens() },
             s.busy ? 'Loading…' : (fresh ? 'Reload' : 'Load tokens & ordinals')),
@@ -1092,7 +1355,7 @@ function renderSendConfirm(s, draft) {
       el('div', {}, [Fmt.sats(totalIn) + ' sats']),
     ]),
     (draft.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:8px' },
-      `🛡 ${draft.protectedCount} ordinal/token UTXO${draft.protectedCount === 1 ? '' : 's'} at this address excluded from this transaction.`) : null,
+      `🛡 ${draft.protectedCount} ordinal/token or 1-sat UTXO${draft.protectedCount === 1 ? '' : 's'} at this address excluded from this transaction.`) : null,
     renderHexInspector(draft.hex),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.cancelSend() }, 'Cancel'),
@@ -1105,6 +1368,7 @@ function renderSendConfirm(s, draft) {
 
 function renderRecoveryPanel(s) {
   const rec = s.recovery;
+  const depth = RECOVERY_DEPTHS.includes(s.recoveryDepth) ? s.recoveryDepth : RECOVERY_DEPTH;
   const d = s.derived;
   const swept = (s.draft && s.draft.swept) || {};
   // Destination field: defaults to the current derived address, but the user
@@ -1116,16 +1380,29 @@ function renderRecoveryPanel(s) {
     ? s.draft.recoveryDest
     : (d ? d.address : '');
   const destId = 'recovery-dest';
-  const setDest = () => setState({ draft: { ...state.draft, recoveryDest: $(destId).value.trim() } });
-  const resetDest = () => {
-    if (!d) return;
-    const next = { ...state.draft }; delete next.recoveryDest;
+  // Changing the destination discards a prepared sweep-all plan and an open
+  // preview: their transactions are already signed to the old address.
+  const setDest = () => {
+    const next = { ...state.draft, recoveryDest: $(destId).value.trim() };
+    delete next.sweepAllPlan; delete next.sweepPreview;
     setState({ draft: next });
   };
+  const resetDest = () => {
+    if (!d) return;
+    const next = { ...state.draft }; delete next.recoveryDest; delete next.sweepAllPlan; delete next.sweepPreview;
+    setState({ draft: next });
+  };
+  const plan = s.draft && s.draft.sweepAllPlan;
 
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Recovery sweep'),
-    el('p', { class: 'muted' }, `Scans the first ${RECOVERY_DEPTH} receive + ${RECOVERY_DEPTH} change addresses under the current preset for stray UTXOs. Edit the destination below before sweeping if you want to send to a different wallet.`),
+    el('p', { class: 'muted' }, `Scans the first ${depth} receive + ${depth} change addresses under the current preset for stray UTXOs. Coins further out need a deeper scan. Edit the destination below before sweeping if you want to send to a different wallet.`),
+    el('div', { class: 'row', style: 'margin-bottom:12px;align-items:center' }, [
+      el('span', { class: 'muted', style: 'font-size:11px;flex:0 0 auto' }, 'Addresses per branch'),
+      el('select', { id: 'recovery-depth', disabled: s.busy,
+                     onchange: () => Actions.setRecoveryDepth($('recovery-depth').value) },
+        RECOVERY_DEPTHS.map((n) => el('option', { value: String(n), selected: n === depth }, String(n)))),
+    ]),
 
     // Destination input — visible whenever results exist OR before scanning,
     // so users see the destination policy up-front.
@@ -1151,13 +1428,14 @@ function renderRecoveryPanel(s) {
     el('div', { class: 'row', style: 'margin-bottom:8px' }, [
       el('button', { disabled: s.busy, onclick: () => Actions.scanRecovery() },
         s.busy && rec && rec.scanning ? `Scanning… ${rec.done || 0}/${rec.total || ''}`
-                                       : (rec ? 'Re-scan' : `Scan first ${RECOVERY_DEPTH} addresses`)),
-      rec && rec.found && rec.found.length > 1
+                                       : (rec ? 'Re-scan' : `Scan first ${depth} addresses`)),
+      rec && rec.found && rec.found.length > 1 && !plan
         ? el('button', { class: 'primary', disabled: s.busy,
-                         onclick: () => Actions.sweepAllRecovered() },
-            s.busy ? 'Sweeping…' : `Sweep all (${rec.found.length})`)
+                         onclick: () => Actions.prepareSweepAll() },
+            s.busy ? 'Building…' : `Prepare sweep of all (${rec.found.length})`)
         : null,
     ]),
+    plan ? renderSweepAllPlan(s, plan) : null,
     !rec ? null
          : !rec.found || rec.found.length === 0
            ? el('p', { class: 'muted' }, rec.scanning ? 'Scanning…' : 'No UTXOs found in scanned range.')
@@ -1167,8 +1445,44 @@ function renderRecoveryPanel(s) {
                 ' address(es) with ', el('strong', {}, Fmt.sats(rec.totalSats)),
                 ' sats recoverable.',
               ]),
+              rec.depth && rec.depth !== depth
+                ? el('p', { class: 'warn', style: 'font-size:11px' },
+                    `These results are from a scan of ${rec.depth} addresses per branch. Re-scan to use ${depth}.`)
+                : null,
               ...rec.found.map((item) => renderRecoveryRow(s, item, swept[item.path])),
             ]),
+  ]);
+}
+// Totals for a prepared sweep-all, built from the signed drafts themselves.
+function renderSweepAllPlan(s, plan) {
+  const sum = (k) => plan.drafts.reduce((a, d) => a + d[k], 0);
+  const protectedTotal = sum('protectedCount');
+  return el('div', { class: 'panel', style: 'border-color:var(--accent,#c90);margin-bottom:12px' }, [
+    el('h3', {}, 'Confirm sweep of all recovered addresses'),
+    plan.drafts.length === 0 ? el('p', { class: 'muted' }, 'No transaction could be built.') : el('div', {}, [
+      el('p', {}, [
+        el('strong', {}, String(plan.drafts.length)), ' separate transaction(s), one per address, sending ',
+        el('strong', {}, `${Fmt.sats(sum('sentSats'))} sats`), ' in total to ',
+      ]),
+      el('code', { style: 'display:block;margin-bottom:8px' }, plan.dest),
+      el('p', {}, ['Total miner fees: ', el('strong', {}, `${Fmt.sats(sum('fee'))} sats`),
+                   `. Total spent from these addresses: ${Fmt.sats(sum('sentSats') + sum('fee'))} sats.`]),
+      protectedTotal > 0 ? el('p', { class: 'muted', style: 'font-size:11px' },
+        `🛡 ${protectedTotal} ordinal/token or 1-sat UTXO(s) left untouched.`) : null,
+      ...plan.drafts.map((d) => el('div', { class: 'muted', style: 'font-size:11px' },
+        `${d.path} · ${Fmt.shortHash(d.fromAddress)} → ${Fmt.sats(d.sentSats)} sats (fee ${Fmt.sats(d.fee)})`)),
+    ]),
+    plan.errors.length > 0 ? el('div', { style: 'margin-top:8px' }, [
+      el('div', { class: 'warn', style: 'font-size:12px' }, `${plan.errors.length} address(es) not included:`),
+      ...plan.errors.map((e) => el('div', { class: 'muted', style: 'font-size:11px' },
+        `${e.path} · ${Fmt.shortHash(e.fromAddress)}: ${e.error}`)),
+    ]) : null,
+    el('div', { class: 'row', style: 'margin-top:12px' }, [
+      el('button', { disabled: s.busy, onclick: () => Actions.cancelSweepAll() }, 'Cancel'),
+      plan.drafts.length > 0 ? el('button', { class: 'danger', disabled: s.busy,
+                                              onclick: () => Actions.confirmSweepAll() },
+        s.busy ? 'Broadcasting…' : `Broadcast ${plan.drafts.length} transaction(s)`) : null,
+    ]),
   ]);
 }
 function renderRecoveryRow(s, item, sweepResult) {
@@ -1185,7 +1499,7 @@ function renderRecoveryRow(s, item, sweepResult) {
         el('div', { class: 'muted', style: 'font-size:11px' },
           `${Fmt.sats(preview.sentSats)} sats · fee ${Fmt.sats(preview.fee)} sats (${preview.vsize} bytes)`),
         (preview.protectedCount > 0) ? el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' },
-          `🛡 ${preview.protectedCount} ordinal/token UTXO${preview.protectedCount === 1 ? '' : 's'} at this address excluded from the sweep.`) : null,
+          `🛡 ${preview.protectedCount} ordinal/token or 1-sat UTXO${preview.protectedCount === 1 ? '' : 's'} at this address excluded from the sweep.`) : null,
         renderHexInspector(preview.hex),
         el('div', { class: 'row' }, [
           el('button', { onclick: () => Actions.cancelSweepPreview() }, 'Cancel'),
@@ -1208,7 +1522,8 @@ function renderRecoveryRow(s, item, sweepResult) {
             sweepResult.ok ? `swept: ${Fmt.shortHash(sweepResult.txid)}` : `error: ${sweepResult.error}`)
         : isPreviewing
           ? null   // preview block has its own Confirm/Cancel
-          : el('button', { class: 'primary', style: 'flex:0 0 auto', disabled: s.busy || !!preview,
+          : el('button', { class: 'primary', style: 'flex:0 0 auto',
+                           disabled: s.busy || !!preview || !!(s.draft && s.draft.sweepAllPlan),
                            onclick: () => Actions.previewSweep(item) },
               preview ? 'Preview busy' : 'Preview'),
     ]),
@@ -1251,8 +1566,8 @@ function renderExportPanel(s) {
               ? 'Back up BOTH the mnemonic AND the BIP39 passphrase. Neither alone recovers your wallet.'
               : 'No BIP39 passphrase on this wallet — mnemonic alone recovers it.'),
           el('div', { class: 'row' }, [
-            el('button', { onclick: () => Actions.copy(exported, 'Mnemonic') }, 'Copy mnemonic'),
-            exportedPass ? el('button', { onclick: () => Actions.copy(exportedPass, 'BIP39 passphrase') }, 'Copy passphrase') : null,
+            el('button', { onclick: () => Actions.copySecret(exported, 'Mnemonic') }, 'Copy mnemonic'),
+            exportedPass ? el('button', { onclick: () => Actions.copySecret(exportedPass, 'BIP39 passphrase') }, 'Copy passphrase') : null,
             el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download encrypted backup'),
             el('button', { onclick: () => Actions.clearExport() }, 'Hide'),
           ]),
@@ -1312,32 +1627,30 @@ function renderCreateShow(s) {
     el('p', { class: 'warn' }, 'This is the ONLY way to recover your wallet. Anyone with these words can spend your coins. Write them down on paper — do not screenshot, email, or photograph.'),
     el('pre', { id: 'mnemonic-out' }, m),
     el('div', { class: 'row' }, [
-      el('button', { onclick: () => Actions.copyToClipboard(m) }, 'Copy to clipboard'),
+      el('button', { onclick: () => Actions.copySecret(m, 'Mnemonic') }, 'Copy to clipboard'),
       el('button', { onclick: () => Actions.cancelCreate() }, 'Cancel'),
       el('button', { class: 'primary', onclick: () => Actions.gotoConfirm() }, 'I have written it down →'),
     ]),
   ]);
 }
 function renderCreateConfirm(s) {
-  const m = (s.draft.mnemonic || '').split(/\s+/);
-  const lastIdx = m.length - 1;
-  const inputId = 'confirm-word';
+  const positions = (s.draft && s.draft.checkPositions) || [];
+  const ids = positions.map((_, k) => `confirm-word-${k}`);
+  const submit = () => Actions.checkBackupWords(ids.map(id => $(id).value));
   return el('div', { class: 'panel' }, [
     el('h2', {}, 'Confirm you wrote it down'),
-    el('p', {}, [
-      'Type the ',
-      el('strong', {}, `${lastIdx + 1}th (last) word`),
-      ' of your mnemonic:',
-    ]),
-    el('input', {
-      id: inputId, type: 'text', placeholder: 'last word', autocomplete: 'off',
-      onkeydown: (e) => { if (e.key === 'Enter') Actions.checkLastWord($(inputId).value, m[lastIdx]); },
-    }),
+    el('p', {}, 'From your written copy, type these words of your recovery phrase:'),
+    ...positions.map((pos, k) => el('div', { style: 'margin-bottom:8px' }, [
+      el('div', { class: 'muted', style: 'font-size:11px;margin-bottom:4px' }, `Word #${pos + 1}`),
+      el('input', {
+        id: ids[k], type: 'text', placeholder: `word #${pos + 1}`, autocomplete: 'off',
+        autocapitalize: 'off', spellcheck: 'false',
+        onkeydown: (e) => { if (e.key === 'Enter') submit(); },
+      }),
+    ])),
     el('div', { class: 'row' }, [
       el('button', { onclick: () => Actions.gotoShow() }, '← Show mnemonic again'),
-      el('button', { class: 'primary',
-                     onclick: () => Actions.checkLastWord($(inputId).value, m[lastIdx]) },
-        'Continue →'),
+      el('button', { class: 'primary', onclick: submit }, 'Continue →'),
     ]),
   ]);
 }
@@ -1384,15 +1697,20 @@ function renderSetPassword(s, origin) {
   // lost wallet, so we double-prompt).
   const isImport = origin === 'import';
   const importPp = state.draft && state.draft.passphrase;
+  // Saving replaces the vault already on this device, so ask for a typed
+  // confirmation and offer its encrypted backup first.
+  const replacing = Vault.exists();
+  const replaceId = 'replace-confirm';
+  const replaceTyped = () => (replacing ? $(replaceId).value : '');
 
   const submit = () => {
     if (isImport) {
       // null sentinel -> setPassword falls back to state.draft.passphrase
-      Actions.setPassword($(pw1).value, $(pw2).value, origin, null);
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, null, replaceTyped());
     } else {
       const a = $(bp1).value, b = $(bp2).value;
       if (a !== b) { Status.error('BIP39 passphrases do not match.'); return; }
-      Actions.setPassword($(pw1).value, $(pw2).value, origin, a);
+      Actions.setPassword($(pw1).value, $(pw2).value, origin, a, replaceTyped());
     }
   };
 
@@ -1421,10 +1739,21 @@ function renderSetPassword(s, origin) {
             'If set, this adds an extra secret to your seed — your mnemonic alone will NOT recover your wallet without it. Different from the SatoFinder password above. Leave blank for the standard BIP39 default.'),
         ]),
 
+    replacing
+      ? el('div', { style: 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' }, [
+          el('div', { class: 'err', style: 'font-size:12px;margin-bottom:8px' },
+            'A wallet vault already exists on this device. Saving will permanently replace it. ' +
+            'Unless you have its mnemonic written down, download its encrypted backup first.'),
+          el('button', { onclick: () => Actions.downloadEncryptedBackup() }, 'Download backup of the existing vault'),
+          el('input', { id: replaceId, type: 'text', placeholder: 'Type REPLACE to overwrite the existing vault',
+                        autocomplete: 'off', spellcheck: 'false', style: 'margin-top:8px' }),
+        ])
+      : null,
+
     el('div', { class: 'row', style: 'margin-top:16px' }, [
       el('button', { onclick: () => Actions.gotoLanding() }, 'Cancel'),
       el('button', { class: 'primary', disabled: s.busy, onclick: submit },
-        s.busy ? 'Encrypting…' : 'Save & unlock'),
+        s.busy ? 'Encrypting…' : (replacing ? 'Replace vault & unlock' : 'Save & unlock')),
     ]),
   ]);
 }
@@ -1451,12 +1780,98 @@ const Status = {
 // All user-driven mutations go through Actions.* — each returns void, updates
 // state via setState, and surfaces errors via Status.error. Render functions
 // wire these as onclick handlers via el(...).
+// Bumped whenever the open wallet goes away or changes (lock, wipe, unlock,
+// create/import), so async work started for one wallet can tell it is stale
+// and must not touch state or keep spending.
+let walletSession = 0;
+// Everything derived from the open wallet: its keys, recovered keys, balances
+// and drafts. Cleared together so nothing outlives the wallet it came from.
+const clearedWalletState = () => ({
+  wallet: null, derived: null, balance: null, history: [], recovery: null,
+  tokens: null, draftTx: null, draft: {}, busy: false,
+});
+// Address-scoped results (balance, history, tokens, a send draft) also go
+// stale when the derivation path changes, which replaces state.derived.
+// Did the node's reply name the transaction we signed? If not, the outcome is
+// unknown: say so and give the signed TXID to look up before retrying, since
+// a rebuilt transaction could spend again.
+const broadcastMatches = (raw, localTxid) =>
+  (typeof raw === 'string' ? raw.trim().replace(/^"|"$/g, '') : '') === localTxid;
+const unknownOutcome = (txid) =>
+  `The broadcast reply did not confirm this transaction. Look up ${txid} on WhatsOnChain before trying again.`;
+const stillCurrent = (session, derived) => session === walletSession && state.derived === derived;
+
 const Actions = {
   // ---- view navigation
   gotoLanding()  { Status.clear(); setState({ view: 'landing', step: null, draft: {} }); },
   gotoUnlock()   { Status.clear(); setState({ view: 'unlock',  step: null }); },
+  gotoRestore()  { Status.clear(); setState({ view: 'restore', step: null }); },
+
+  // Restore a file made by "Download encrypted backup". The file is only read:
+  // its phrase is decrypted with the password, checked, and saved as a fresh
+  // vault at the current iteration count, then the wallet opens.
+  async restoreBackup(file, password, replaceTyped) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
+    if (!file) { Status.error('Choose the backup file first.'); return; }
+    if (!password) { Status.error('Enter the password this backup was made with.'); return; }
+    if (file.size > BACKUP_MAX_BYTES) { Status.error('This file is too large to be a SatoFinder backup.'); return; }
+    if (Vault.exists() && (replaceTyped || '').trim() !== 'REPLACE') {
+      Status.error('A vault already exists on this device. Type REPLACE to overwrite it.');
+      return;
+    }
+    setState({ busy: true });
+    const session = walletSession;
+    try {
+      const blob = Vault.parseBackup(await file.text());
+      const payload = JSON.parse(await Crypto.decrypt(password, blob));   // throws 'Wrong password'
+      if (session !== walletSession) {
+        // Nothing has been written yet.
+        Status.info('Restore stopped because the wallet was unlocked or locked meanwhile. Nothing was changed.');
+        return;
+      }
+      const mnemonic = payload && typeof payload.mnemonic === 'string' ? payload.mnemonic.trim() : '';
+      const passphrase = payload && typeof payload.passphrase === 'string' ? payload.passphrase : '';
+      // isValid throws, rather than returning false, for some malformed input.
+      let validPhrase = false;
+      try { validPhrase = bsv.Mnemonic.isValid(mnemonic); } catch { validPhrase = false; }
+      if (!validPhrase) throw new Error('The backup decrypted, but it does not hold a valid recovery phrase.');
+      // Open the wallet before touching the stored vault: if it can't open,
+      // the existing vault stays as it is.
+      const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      const sealed = await Vault.seal(mnemonic, password, passphrase);
+      if (session !== walletSession) {
+        setState({ busy: false });
+        Status.info('Restore stopped because the vault changed meanwhile. Nothing was changed.');
+        return;
+      }
+      Vault.commit(sealed);
+      walletSession++;
+      setState({
+        ...clearedWalletState(),
+        wallet, locked: false, vaultExists: true, view: 'unlocked', step: null,
+      });
+      AutoLock.start();
+      Actions._rederive();
+      Status.info('Backup restored and unlocked.' + (passphrase ? ' (BIP39 passphrase restored)' : ''));
+    } catch (e) {
+      if (session !== walletSession) return;
+      setState({ busy: false });
+      Status.error(e.message || 'Could not restore this backup.');
+    }
+  },
   gotoShow()     { setState({ view: 'create', step: 'show' }); },
-  gotoConfirm()  { setState({ view: 'create', step: 'confirm' }); },
+  // The backup check asks for BACKUP_CHECK_WORDS words at random positions,
+  // chosen once per phrase so re-renders and "show again" keep the same ones.
+  gotoConfirm() {
+    const words = (state.draft.mnemonic || '').split(/\s+/).filter(Boolean);
+    let positions = state.draft.checkPositions;
+    if (!Array.isArray(positions) || positions.some(i => i >= words.length)) {
+      const picked = new Set();
+      while (picked.size < Math.min(BACKUP_CHECK_WORDS, words.length)) picked.add(randomIndex(words.length));
+      positions = [...picked].sort((a, b) => a - b);
+    }
+    setState({ view: 'create', step: 'confirm', draft: { ...state.draft, checkPositions: positions } });
+  },
 
   // ---- create flow
   startCreate(entropyBits) {
@@ -1485,9 +1900,15 @@ const Actions = {
   },
   cancelCreate() { Actions.gotoLanding(); },
 
-  checkLastWord(typed, expected) {
-    if ((typed || '').trim().toLowerCase() !== (expected || '').trim().toLowerCase()) {
-      Status.error('That word doesn\'t match — check your written copy.');
+  // typed: the entered words, in the order of state.draft.checkPositions.
+  // Says only whether all match, so the check can't be solved word by word.
+  checkBackupWords(typed) {
+    const words = (state.draft.mnemonic || '').split(/\s+/).filter(Boolean);
+    const positions = state.draft.checkPositions || [];
+    const norm = (w) => (w || '').trim().toLowerCase();
+    const allMatch = positions.length > 0 && positions.every((pos, k) => norm(typed[k]) === norm(words[pos]));
+    if (!allMatch) {
+      Status.error('Those words don\'t match your recovery phrase — check your written copy.');
       return;
     }
     Status.clear();
@@ -1518,10 +1939,15 @@ const Actions = {
   // ---- password set (used by both create and import). Accepts an optional
   // BIP39 passphrase ("25th word") — different from pw1/pw2 which encrypt the
   // local vault. Both are stored in the encrypted vault blob.
-  async setPassword(pw1, pw2, origin, bip39Pass) {
+  async setPassword(pw1, pw2, origin, bip39Pass, replaceTyped) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
     if (!pw1 || pw1.length < 12) { Status.error('Password must be at least 12 characters.'); return; }
     if (pw1 !== pw2) { Status.error('Passwords do not match.'); return; }
     if (passwordStrength(pw1) < 2) { Status.error('Password is too weak — mix character classes and length.'); return; }
+    if (Vault.exists() && (replaceTyped || '').trim() !== 'REPLACE') {
+      Status.error('A vault already exists on this device. Type REPLACE to overwrite it.');
+      return;
+    }
     const mnemonic = state.draft.mnemonic;
     if (!mnemonic) { Status.error('No mnemonic in flow — start over.'); Actions.gotoLanding(); return; }
     // On Create, the passphrase comes from this screen's input. On Import, it
@@ -1529,20 +1955,30 @@ const Actions = {
     const passphrase = (typeof bip39Pass === 'string' ? bip39Pass : state.draft.passphrase) || '';
 
     setState({ busy: true });
+    const session = walletSession;
     try {
-      await Vault.save(mnemonic, pw1, passphrase);
-      // Open the wallet straight from RAM rather than round-tripping.
+      // Open the wallet first: nothing is stored unless it opens.
       const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      const blob = await Vault.seal(mnemonic, pw1, passphrase);
+      if (session !== walletSession) {
+        // Locked, wiped or replaced while encrypting: nothing has been written.
+        setState({ busy: false });
+        Status.info('Stopped because the vault changed meanwhile. Nothing was saved.');
+        return;
+      }
+      Vault.commit(blob);
+      walletSession++;
       setState({
+        ...clearedWalletState(),
         wallet, locked: false, vaultExists: true,
-        view: 'unlocked', step: null, draft: {},
-        busy: false,
+        view: 'unlocked', step: null,
       });
+      AutoLock.start();
       Actions._rederive();
       const passNote = passphrase ? ' (BIP39 passphrase set)' : '';
       Status.info((origin === 'import' ? 'Imported & unlocked.' : 'Wallet created & unlocked.') + passNote);
-      AutoLock.arm();
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Could not save vault: ${e.message}`);
     }
@@ -1550,18 +1986,30 @@ const Actions = {
 
   // ---- unlock
   async unlock(password) {
+    if (state.busy) { Status.error('Another operation is still running. Try again when it finishes.'); return; }
     if (!password) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
+    const session = walletSession;
+    const rawBefore = Vault.raw();   // for the in-place iteration upgrade below
     try {
       const { mnemonic, passphrase } = await Vault.unlock(password);
+      if (session !== walletSession) return;   // locked or wiped while decrypting
       const wallet = Wallet.openFromMnemonic(mnemonic, passphrase);
+      walletSession++;
       setState({
-        wallet, locked: false, view: 'unlocked', step: null, busy: false,
+        ...clearedWalletState(),
+        wallet, locked: false, view: 'unlocked', step: null,
       });
+      AutoLock.start();
       Actions._rederive();
       Status.info('Unlocked.');
-      AutoLock.arm();
+      // Bring an older vault up to the current iteration count, in the
+      // background: the wallet is already open, and failure keeps the old one.
+      Vault.upgradeIfNeeded(password, rawBefore).catch((e) => {
+        console.warn('Vault iteration upgrade skipped:', e && e.message);
+      });
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message || 'Unlock failed.');
     }
@@ -1569,33 +2017,54 @@ const Actions = {
 
   // ---- lock / wipe
   lock() {
-    setState({ wallet: null, locked: true, view: 'landing', step: null, draft: {} });
+    walletSession++;
+    setState({ ...clearedWalletState(), locked: true, view: 'landing', step: null });
     AutoLock.disarm();
+    if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
     Status.info('Locked.');
   },
   confirmWipe() {
     const typed = prompt('Type DELETE to wipe the local vault. This cannot be undone.');
     if (typed !== 'DELETE') { Status.info('Wipe cancelled.'); return; }
     Vault.wipe();
+    if (ClipboardGuard.pending()) ClipboardGuard.clearNow();
+    walletSession++;
     setState({
-      wallet: null, locked: true, vaultExists: false,
-      view: 'landing', step: null, draft: {},
+      ...clearedWalletState(), locked: true, vaultExists: false,
+      view: 'landing', step: null,
     });
     Status.info('Vault wiped.');
   },
 
   // ---- clipboard (no auto-copy — only on explicit click)
+  // Returns true if the text was copied. Any copy supersedes a pending
+  // secret clear: the clipboard no longer holds that secret.
   async copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
+      ClipboardGuard.cancel();
       Status.info('Copied to clipboard.');
+      return true;
     } catch {
       Status.error('Clipboard copy failed (browser blocked it).');
+      return false;
     }
   },
   copy(text, label) {
-    Actions.copyToClipboard(text).then(() => {
-      if (label) Status.info(`${label} copied.`);
+    Actions.copyToClipboard(text).then((ok) => {
+      if (ok && label) Status.info(`${label} copied.`);
+    });
+  },
+  // For keys, phrases and passphrases: the clipboard is cleared after
+  // CLIPBOARD_CLEAR_MS or at lock, whichever comes first.
+  copySecret(text, label) {
+    const session = walletSession;
+    Actions.copyToClipboard(text).then((ok) => {
+      if (!ok) return;
+      // Locked while the copy was in flight: take the secret back off at once.
+      if (session !== walletSession) { ClipboardGuard.clearNow(); return; }
+      ClipboardGuard.schedule();
+      Status.info(`${label} copied. It will be cleared from the clipboard after ${CLIPBOARD_CLEAR_MS / 1000} seconds or when the wallet locks, once this page is in front again. Closing the tab first leaves it on the clipboard.`);
     });
   },
 
@@ -1660,8 +2129,11 @@ const Actions = {
   async refreshBalance() {
     if (!state.derived) { Status.error('No address derived.'); return; }
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const data = await Net.woc.balance(state.derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (typeof data.confirmed !== 'number' || typeof data.unconfirmed !== 'number') {
         throw new Error('Unexpected balance response');
       }
@@ -1670,6 +2142,7 @@ const Actions = {
       // Refresh price if we don't have it yet (cheap fallback).
       if (state.price == null) Actions.fetchPrice();
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Balance fetch failed: ${e.message}`);
     }
@@ -1695,7 +2168,7 @@ const Actions = {
     if (!state.derived) { Status.error('No address derived.'); return; }
     const to = (toRaw || '').trim();
     if (!to) { Status.error('Enter a recipient address.'); return; }
-    if (!isValidAddress(to)) { Status.error('Recipient address is not a valid BSV address.'); return; }
+    if (!isValidAddress(to)) { Status.error('Recipient must be a mainnet BSV address starting with 1 (P2PKH).'); return; }
     const sats = parseInt(String(amtRaw).trim(), 10);
     if (!Number.isFinite(sats) || !Number.isInteger(sats) || sats <= 0) {
       Status.error('Amount must be a positive whole number of satoshis.');
@@ -1704,23 +2177,27 @@ const Actions = {
     if (sats < 546) { Status.error('Amount is below dust threshold (546 sats).'); return; }
 
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       // Fetch protected set FIRST. If the indexer is down we block entirely
       // (Tokens.protectedSet throws with a clear message); building anyway
       // could burn an NFT or destroy a token at this address.
-      const protectedSet = await Tokens.protectedSet(state.derived.address);
-      const raw = await Net.woc.unspent(state.derived.address);
-      const allUtxos = normalizeWocUtxos(raw, state.derived.address);
+      const protectedSet = await Tokens.protectedSet(derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
+      const raw = await Net.woc.unspent(derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
+      const allUtxos = normalizeWocUtxos(raw, derived.address);
       const { spendable, protectedCount } = Tokens.filter(allUtxos, protectedSet);
       if (spendable.length === 0) {
         throw new Error(protectedCount > 0
           ? `All ${protectedCount} UTXOs at this address carry ordinals or tokens (protected). Nothing safe to spend.`
           : 'No spendable UTXOs at this address.');
       }
-      const priv = bsv.PrivateKey.fromWIF(state.derived.wif);
+      const priv = bsv.PrivateKey.fromWIF(derived.wif);
       const draft = TxBuilder.send({
         utxos: spendable, toAddress: to, sats,
-        privateKey: priv, fromAddress: state.derived.address,
+        privateKey: priv, fromAddress: derived.address,
       });
       setState({
         draftTx: { ...draft, to, protectedCount, tx: undefined /* drop tx to keep state JSON-clean */ },
@@ -1728,6 +2205,7 @@ const Actions = {
       });
       Status.info(`Transaction built (${protectedCount} ordinal/token UTXOs protected). Review and confirm to broadcast.`);
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Build failed: ${e.message}`);
     }
@@ -1737,35 +2215,63 @@ const Actions = {
     const d = state.draftTx;
     if (!d || !d.hex) { Status.error('No draft transaction.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       const txid = await Net.woc.broadcast(d.hex);
-      const cleanTxid = typeof txid === 'string' ? txid.trim().replace(/^"|"$/g, '') : String(txid);
-      setState({ draftTx: null, busy: false, balance: null });   // invalidate balance
-      Status.info(`Broadcast OK. Txid: ${cleanTxid}`);
+      // The broadcast happened either way, so always report it; only the state
+      // belongs to the session that started it.
+      const ok = broadcastMatches(txid, d.txid);
+      // On an unknown outcome keep the draft: re-sending the same signed hex
+      // can't pay twice, unlike building a new transaction.
+      if (session === walletSession) {
+        setState(ok ? { draftTx: null, busy: false, balance: null } : { busy: false, balance: null });
+      }
+      if (ok) {
+        // The payment is done: don't leave the form filled for a second send.
+        clearFieldsOnNextRender('send-to', 'send-amt', 'tip-amt');
+        Status.info(`Broadcast OK. Txid: ${d.txid}`);
+      }
+      else Status.error(unknownOutcome(d.txid));
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Broadcast failed: ${e.message}`);
     }
   },
 
+  setRecoveryDepth(raw) {
+    const n = parseInt(raw, 10);
+    if (!RECOVERY_DEPTHS.includes(n)) { Status.error('Choose one of the listed scan depths.'); return; }
+    setState({ recoveryDepth: n });
+  },
+
   // ---- recovery scan + sweep
   async scanRecovery() {
     if (!state.wallet || !state.wallet.root) { Status.error('Wallet locked.'); return; }
-    setState({ busy: true, recovery: { scanning: true, done: 0, total: RECOVERY_DEPTH * 2 } });
+    const session = walletSession;
+    // A re-scan replaces the found items, so prepared sweeps built from the old
+    // results are dropped, and so are the "swept" marks: new coins can arrive
+    // at an address swept earlier, and the fresh scan is what shows them.
+    const draft = { ...state.draft }; delete draft.sweepAllPlan; delete draft.sweepPreview; delete draft.swept;
+    const depth = RECOVERY_DEPTHS.includes(state.recoveryDepth) ? state.recoveryDepth : RECOVERY_DEPTH;
+    setState({ busy: true, draft, recovery: { scanning: true, done: 0, total: depth * 2 } });
     try {
       const onProgress = (p) => {
+        if (session !== walletSession) return;
         if (p.stage === 'scanning') {
           setState({ recovery: { ...state.recovery, done: p.done, total: p.total } });
         }
       };
-      const found = await Recovery.scan(state.wallet.root, state, { onProgress });
+      const found = await Recovery.scan(state.wallet.root, state, { depth, onProgress });
+      if (session !== walletSession) return;   // locked or switched: drop the results
       const totalSats = found.reduce((a, x) => a + x.totalSats, 0);
       setState({
         busy: false,
-        recovery: { scanning: false, found, totalSats, done: RECOVERY_DEPTH * 2, total: RECOVERY_DEPTH * 2 },
+        recovery: { scanning: false, found, totalSats, depth, done: depth * 2, total: depth * 2 },
       });
       Status.info(found.length === 0 ? 'Recovery scan complete — nothing found.' : `Found ${found.length} addresses with ${Fmt.sats(totalSats)} sats.`);
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(`Recovery scan failed: ${e.message}`);
     }
@@ -1783,7 +2289,7 @@ const Actions = {
   // UI can show "swept N sats, protected M ordinal/token UTXOs".
   async _buildSweepDraft(item, destAddress) {
     if (!destAddress) throw new Error('No destination — enter or derive an address first.');
-    if (!isValidAddress(destAddress)) throw new Error('Destination is not a valid BSV address.');
+    if (!isValidAddress(destAddress)) throw new Error('Destination must be a mainnet BSV address starting with 1 (P2PKH).');
     if (!item || !item.utxos || item.utxos.length === 0) throw new Error('Nothing to sweep.');
     // Indexer-down here = hard block. Burning an ordinal would be irreversible.
     const protectedSet = await Tokens.protectedSet(item.address);
@@ -1800,7 +2306,7 @@ const Actions = {
     });
     return {
       path: item.path, fromAddress: item.address, to: destAddress,
-      hex: built.hex, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
+      hex: built.hex, txid: built.txid, sentSats: built.sentSats, fee: built.fee, vsize: built.vsize,
       protectedCount,
     };
   },
@@ -1808,15 +2314,29 @@ const Actions = {
   // Broadcast a previously-built sweep draft. Records per-path result so the
   // recovery row updates row-by-row.
   async _broadcastSweepDraft(draft) {
+    const session = walletSession;
     try {
       const txidRaw = await Net.woc.broadcast(draft.hex);
-      const txid = typeof txidRaw === 'string' ? txidRaw.trim().replace(/^"|"$/g, '') : String(txidRaw);
+      const txid = draft.txid;
+      if (!broadcastMatches(txidRaw, txid)) throw new Error(unknownOutcome(txid));
+      if (session !== walletSession) {
+        Status.info(`A sweep started before the lock was broadcast: ${txid}`);
+        return { ok: true, txid };
+      }
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[draft.path] = { ok: true, txid };
       setState({ draft: { ...state.draft, swept } });
       Status.info(`Swept ${Fmt.sats(draft.sentSats)} sats from ${draft.fromAddress} → ${Fmt.shortHash(draft.to)}: ${txid}`);
       return { ok: true, txid };
     } catch (e) {
+      if (session !== walletSession) return { ok: false, error: e.message };
+      const prior = state.draft && state.draft.swept && state.draft.swept[draft.path];
+      if (prior && prior.ok) {
+        // Already swept successfully (for example a re-sent identical
+        // transaction the node reports as known): keep the recorded success.
+        Status.error(`Sweep broadcast failed, but ${draft.fromAddress} was already swept: ${e.message}`);
+        return { ok: true, txid: prior.txid };
+      }
       const swept = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
       swept[draft.path] = { ok: false, error: e.message };
       setState({ draft: { ...state.draft, swept } });
@@ -1830,16 +2350,21 @@ const Actions = {
   // inspector + Confirm/Cancel. User can copy the hex to WhatsOnChain to
   // verify, then click Confirm to actually send.
   async previewSweep(item) {
+    if (state.busy) return;
+    if (state.draft && state.draft.sweepAllPlan) { Status.error('Cancel the prepared sweep of all addresses first.'); return; }
     Status.clear();
     setState({ busy: true });
+    const session = walletSession;
     try {
       const draft = await Actions._buildSweepDraft(item, Actions._recoveryDest());
+      if (session !== walletSession) return;   // wallet locked or switched meanwhile
       setState({
         busy: false,
         draft: { ...state.draft, sweepPreview: draft },
       });
       Status.info('Sweep transaction built. Review and confirm to broadcast.');
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message);
     }
@@ -1850,14 +2375,27 @@ const Actions = {
     Status.info('Sweep cancelled.');
   },
   async confirmSweepPreview() {
+    if (state.busy) return;
     const d = state.draft && state.draft.sweepPreview;
     if (!d) { Status.error('No sweep to confirm.'); return; }
+    const dropPreview = () => { const next = { ...state.draft }; delete next.sweepPreview; setState({ draft: next }); };
+    // Signed to the destination at preview time; refuse if it has changed since.
+    if (d.to !== Actions._recoveryDest()) {
+      dropPreview();
+      Status.error('The destination changed after this sweep was built. Preview it again.');
+      return;
+    }
+    const done = state.draft.swept && state.draft.swept[d.path];
+    if (done && done.ok) { dropPreview(); Status.info('This address was already swept.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       await Actions._broadcastSweepDraft(d);
     } finally {
-      const next = { ...state.draft }; delete next.sweepPreview;
-      setState({ busy: false, draft: next });
+      if (session === walletSession) {
+        const next = { ...state.draft }; delete next.sweepPreview;
+        setState({ busy: false, draft: next });
+      }
     }
   },
 
@@ -1867,42 +2405,88 @@ const Actions = {
   // Bypasses the per-row preview — the destination was already set explicitly
   // at the top of the panel, and click-through preview for N items would
   // defeat the bulk action. Failures on one item don't block the others.
-  async sweepAllRecovered() {
+  // Sweep-all happens in two steps. prepareSweepAll builds and signs a draft for
+  // every unswept recovery item but broadcasts nothing; the recovery panel then
+  // shows the totals (sent, fees, destination) and confirmSweepAll broadcasts
+  // exactly those drafts. A re-scan, a destination change or a lock discards
+  // the prepared plan.
+  async prepareSweepAll() {
+    if (state.busy) return;
     const rec = state.recovery;
     if (!rec || !rec.found || rec.found.length === 0) { Status.error('Nothing to sweep.'); return; }
     const destAddress = Actions._recoveryDest();
     if (!destAddress) { Status.error('No destination — enter or derive an address first.'); return; }
-    if (!isValidAddress(destAddress)) { Status.error('Destination is not a valid BSV address.'); return; }
+    if (!isValidAddress(destAddress)) { Status.error('Destination must be a mainnet BSV address starting with 1 (P2PKH).'); return; }
     const swept = (state.draft && state.draft.swept) || {};
-    const pending = rec.found.filter(it => !swept[it.path]);
+    const pending = rec.found.filter(it => !(swept[it.path] && swept[it.path].ok));
     if (pending.length === 0) { Status.info('All items already swept.'); return; }
-    if (!confirm(`Sweep ${pending.length} address(es) to ${destAddress}? Each is a separate transaction (one fee per address). No per-item preview — use individual Sweep buttons for that.`)) return;
 
-    setState({ busy: true });
-    let ok = 0, fail = 0;
+    Status.clear();
+    const session = walletSession;
+    // Only one sweep path at a time: a prepared plan replaces an open preview.
+    const draftNoPreview = { ...state.draft }; delete draftNoPreview.sweepPreview;
+    setState({ busy: true, draft: draftNoPreview });
+    const drafts = [];
+    const errors = [];
     for (const item of pending) {
       try {
         const draft = await Actions._buildSweepDraft(item, destAddress);
-        const r = await Actions._broadcastSweepDraft(draft);
-        if (r.ok) ok++; else fail++;
+        if (session !== walletSession) return;   // locked while building: keep nothing
+        drafts.push(draft);
       } catch (e) {
-        // Build failed (e.g., dust after fee on a tiny utxo). Record so row shows error.
-        const sweptNow = { ...(state.draft && state.draft.swept ? state.draft.swept : {}) };
-        sweptNow[item.path] = { ok: false, error: e.message };
-        setState({ draft: { ...state.draft, swept: sweptNow } });
-        fail++;
+        if (session !== walletSession) return;
+        errors.push({ path: item.path, fromAddress: item.address, error: e.message });
       }
     }
-    setState({ busy: false });
-    Status.info(`Sweep-all complete: ${ok} ok, ${fail} failed.`);
+    setState({
+      busy: false,
+      draft: { ...state.draft, sweepAllPlan: { dest: destAddress, drafts, errors } },
+    });
+    Status.info(drafts.length > 0
+      ? `${drafts.length} sweep transaction(s) built and signed. Review the totals, then confirm to broadcast.`
+      : 'No sweep could be built. See the reasons listed under the plan.');
+  },
+  cancelSweepAll() {
+    const next = { ...state.draft }; delete next.sweepAllPlan;
+    setState({ draft: next });
+    Status.info('Sweep-all cancelled. Nothing was broadcast.');
+  },
+  async confirmSweepAll() {
+    if (state.busy) return;
+    const plan = state.draft && state.draft.sweepAllPlan;
+    if (!plan || plan.drafts.length === 0) { Status.error('Nothing prepared to broadcast.'); return; }
+    if (Actions._recoveryDest() !== plan.dest) {
+      Status.error('The destination changed after these transactions were built. Prepare the sweep again.');
+      return;
+    }
+    const session = walletSession;
+    setState({ busy: true });
+    let ok = 0, fail = 0, skipped = 0;
+    for (const draft of plan.drafts) {
+      if (session !== walletSession) break;
+      const done = state.draft && state.draft.swept && state.draft.swept[draft.path];
+      if (done && done.ok) { skipped++; continue; }   // swept individually meanwhile
+      const r = await Actions._broadcastSweepDraft(draft);
+      if (r.ok) ok++; else fail++;
+    }
+    if (session !== walletSession) {
+      Status.info(`Sweep-all stopped because the wallet was locked: ${ok} broadcast, ${fail} failed before that.`);
+      return;
+    }
+    const next = { ...state.draft }; delete next.sweepAllPlan;
+    setState({ busy: false, draft: next });
+    Status.info(`Sweep-all complete: ${ok} broadcast, ${fail} failed` + (skipped ? `, ${skipped} already swept.` : '.'));
   },
 
   // ---- export: re-verify password before revealing mnemonic + passphrase
   async exportMnemonic(pw) {
     if (!pw) { Status.error('Enter your password.'); return; }
     setState({ busy: true });
+    const session = walletSession;
     try {
       const { mnemonic, passphrase } = await Vault.unlock(pw);   // re-decrypts; throws on wrong pw
+      if (session !== walletSession) return;   // locked meanwhile: never reveal into a locked UI
+      clearFieldsOnNextRender('export-pw');
       setState({ busy: false, draft: {
         ...state.draft,
         exportedMnemonic: mnemonic,
@@ -1910,6 +2494,7 @@ const Actions = {
       }});
       Status.info('Mnemonic revealed. Hide when done.');
     } catch (e) {
+      if (session !== walletSession) return;
       setState({ busy: false });
       Status.error(e.message || 'Wrong password.');
     }
@@ -1938,8 +2523,11 @@ const Actions = {
   async loadHistory() {
     if (!state.derived) { Status.error('No address derived.'); return; }
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const data = await Net.woc.history(state.derived.address);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (!Array.isArray(data)) throw new Error('Unexpected history response');
       // Cap render at 100 most recent so the panel doesn't choke on busy
       // addresses; WoC returns oldest-first, so reverse + slice.
@@ -1947,6 +2535,7 @@ const Actions = {
       setState({ history: items, busy: false });
       Status.info(items.length === 0 ? 'No transactions on this address.' : `${items.length} tx loaded.`);
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`History fetch failed: ${e.message}`);
     }
@@ -1961,11 +2550,14 @@ const Actions = {
     if (!state.derived) { Status.error('No address derived.'); return; }
     const addr = state.derived.address;
     setState({ busy: true });
+    const session = walletSession;
+    const derived = state.derived;
     try {
       const [rawTxos, rawBal] = await Promise.all([
         Net.gorillapool.unspent(addr),
         Net.gorillapool.bsv20Balance(addr).catch(() => []),  // bsv20 endpoint is allowed to noop
       ]);
+      if (!stillCurrent(session, derived)) return;   // wallet locked or switched meanwhile
       if (!Array.isArray(rawTxos)) throw new Error('Indexer returned unexpected shape.');
       const ordinals = rawTxos.filter(Tokens.isProtected).map(Tokens.describeOrdinal);
       // Normalize BSV-20 balance shape: array of { sym, dec, id, all: { confirmed }}
@@ -1988,6 +2580,7 @@ const Actions = {
       if (bsv20.length)    parts.push(`${bsv20.length} BSV-20 token${bsv20.length === 1 ? '' : 's'}`);
       Status.info(parts.length ? `Found ${parts.join(' + ')} at this address.` : 'No ordinals or BSV-20 tokens at this address.');
     } catch (e) {
+      if (!stillCurrent(session, derived)) return;
       setState({ busy: false });
       Status.error(`Token lookup failed: ${e.message}`);
     }
@@ -2010,28 +2603,112 @@ const Wallet = {
 // Auto-lock: clear the in-RAM wallet after AUTOLOCK_MS of inactivity (or when
 // the tab becomes hidden, which is more aggressive). User can opt out by
 // staying interactive.
+// Clears a copied secret from the clipboard. A page can't read the clipboard
+// without a permission prompt, so the clear is unconditional: it overwrites
+// the clipboard with an empty string. Writing needs the page focused, so an
+// attempt made while it isn't is retried the next time it gains focus.
+const ClipboardGuard = {
+  _timer: null,
+  _due: false,
+  schedule() {
+    ClipboardGuard.cancel();
+    ClipboardGuard._timer = setTimeout(() => { ClipboardGuard._timer = null; ClipboardGuard.clearNow(); }, CLIPBOARD_CLEAR_MS);
+  },
+  cancel() {
+    if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+    ClipboardGuard._due = false;
+  },
+  pending() { return !!ClipboardGuard._timer || ClipboardGuard._due; },
+  _clearing: null,
+  // Concurrent callers (a focus event and a lock together) share one write.
+  clearNow() {
+    if (ClipboardGuard._timer) { clearTimeout(ClipboardGuard._timer); ClipboardGuard._timer = null; }
+    if (!ClipboardGuard._clearing) {
+      ClipboardGuard._clearing = (async () => {
+        try {
+          await navigator.clipboard.writeText('');
+          ClipboardGuard._due = false;
+        } catch {
+          ClipboardGuard._due = true;   // not focused: try again on focus
+        } finally {
+          ClipboardGuard._clearing = null;
+        }
+      })();
+    }
+    return ClipboardGuard._clearing;
+  },
+  onFocus() { if (ClipboardGuard._due) ClipboardGuard.clearNow(); },
+};
+
+// Timers are the fast path; wall-clock times are the backstop. Browsers can
+// freeze a background tab's timers (memory saver, mobile) or pause them in
+// sleep, so every return to the page and every activity event re-checks the
+// elapsed time and locks if a limit has passed.
 const AutoLock = {
   _timer: null,
+  _hidden: null,
+  _hiddenAt: null,     // when the tab was hidden, while it is hidden
+  _lastActive: 0,      // last activity (or unlock) that re-armed the idle timer
   arm() {
-    AutoLock.disarm();
+    // Resets only the idle timer: a pending hidden-tab lock must survive it.
+    AutoLock._lastActive = Date.now();
+    if (AutoLock._timer) clearTimeout(AutoLock._timer);
     AutoLock._timer = setTimeout(() => {
       if (!state.locked) Actions.lock();
     }, AUTOLOCK_MS);
   },
   disarm() {
     if (AutoLock._timer) { clearTimeout(AutoLock._timer); AutoLock._timer = null; }
+    if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
+    AutoLock._hiddenAt = null;
   },
-  bump() { if (!state.locked) AutoLock.arm(); },
+  // Call after any successful unlock: arms the idle timer and, if the tab is
+  // already hidden (e.g. switched away during a slow unlock), starts the grace.
+  start() {
+    AutoLock.arm();
+    if (document.visibilityState === 'hidden') AutoLock.onHidden();
+  },
+  idleExpired() { return Date.now() - AutoLock._lastActive >= AUTOLOCK_MS; },
+  // Returns true when this call locked the wallet.
+  bump() {
+    if (state.locked) return false;
+    if (AutoLock.idleExpired()) { Actions.lock(); return true; }   // timer missed (sleep/freeze)
+    AutoLock.arm();
+    return false;
+  },
+  // Tab hidden: lock once the grace period passes, unless it comes back first.
+  onHidden() {
+    if (state.locked) return;
+    if (AutoLock._hiddenAt === null) AutoLock._hiddenAt = Date.now();
+    if (AutoLock._hidden) return;
+    AutoLock._hidden = setTimeout(() => {
+      AutoLock._hidden = null;
+      if (!state.locked) Actions.lock();
+    }, HIDDEN_GRACE_MS);
+  },
+  onVisible() {
+    const hiddenFor = AutoLock._hiddenAt === null ? 0 : Date.now() - AutoLock._hiddenAt;
+    AutoLock._hiddenAt = null;
+    if (AutoLock._hidden) { clearTimeout(AutoLock._hidden); AutoLock._hidden = null; }
+    if (state.locked) return;
+    if (hiddenFor >= HIDDEN_GRACE_MS || AutoLock.idleExpired()) { Actions.lock(); return; }
+    AutoLock.arm();
+  },
 };
 
 function wireGlobalEvents() {
   // Reset idle timer on any interaction.
-  for (const ev of ['mousemove','keydown','touchstart','focus']) {
-    window.addEventListener(ev, AutoLock.bump, { passive: true });
+  // A secret clear that couldn't run while the page was unfocused runs now.
+  window.addEventListener('focus', ClipboardGuard.onFocus);
+  // Capture phase, so an expired idle locks first, and the event that found
+  // it expired never reaches its target.
+  for (const ev of ['mousemove','keydown','touchstart','focus','click']) {
+    window.addEventListener(ev, (e) => { if (AutoLock.bump()) e.stopPropagation(); }, { passive: true, capture: true });
   }
-  // Lock when tab is hidden — safer than waiting for the idle timeout.
+  // A hidden tab locks after HIDDEN_GRACE_MS, sooner than the idle timeout.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && !state.locked) Actions.lock();
+    if (document.visibilityState === 'hidden') AutoLock.onHidden();
+    else AutoLock.onVisible();
   });
 }
 

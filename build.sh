@@ -128,7 +128,10 @@ PY
     sed -i -E "s|'sha256-[A-Za-z0-9+/=]+' https://cdn.jsdelivr.net|'sha256-${script_hash}' https://cdn.jsdelivr.net|" "$file"
     echo "  pinned (existing hash updated)"
   else
-    echo "  build.sh: no CSP placeholder or existing hash found in $file; nothing to substitute" >&2
+    # Without the hash in the CSP the browser refuses the page's script, so
+    # this is an error, not a warning.
+    echo "  build.sh: no CSP placeholder or existing hash found in $file" >&2
+    exit 1
   fi
 
   # --- 2. SRI drift check (network) ------------------------------------------

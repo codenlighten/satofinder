@@ -37,11 +37,11 @@
   <h2>Security model</h2>
   <div class="panel">
     <ul>
-      <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (310,000 iter) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
+      <li>Your <strong>mnemonic</strong> is encrypted with a password you choose, using <code>PBKDF2-SHA256 (600,000 iterations; vaults saved before this keep 310,000) → AES-GCM</code>, and stored in <code>localStorage</code> only.</li>
       <li>The encrypted blob is the <strong>only</strong> source of truth on this device — there is no password recovery. If you forget the password, you must wipe the vault and re-import the mnemonic.</li>
       <li>The app loads the BSV library from jsDelivr, pinned with <strong>SHA-384 Subresource Integrity</strong> — <code>@smartledger/bsv@7.1.0</code> on both pages. A compromised CDN cannot ship modified code: the browser refuses to run a bundle whose bytes don't match the pinned hash.</li>
       <li>Strict <strong>Content-Security-Policy</strong> blocks all inline scripts except the one hashed into the policy, and only allows network calls to a fixed allowlist (<code>api.whatsonchain.com</code>, <code>api.bitails.io</code> and <code>ordinals.gorillapool.io</code> in Classic; <code>api.whatsonchain.com</code> and <code>ordinals.gorillapool.io</code> in the Alternate UI).</li>
-      <li>The wallet auto-locks after 10 minutes of inactivity, and when the tab is hidden. Private key / mnemonic are cleared from memory. Classic locks the instant the tab is hidden; the Alternate UI waits 60 seconds first (see <a href="#alternate">Alternate UI</a>).</li>
+      <li>The wallet auto-locks after 10 minutes of inactivity, and when the tab is hidden. Private key / mnemonic are cleared from memory. If you copy a private key, recovery phrase or passphrase, the clipboard is cleared 60 seconds later or when the wallet locks, whichever comes first (it can't be cleared while the page is in the background, so that happens as soon as you return to it; if you close the tab first, the copied secret stays on the clipboard). Both interfaces wait 60 seconds after the tab is hidden before locking, so you can check a transaction on WhatsOnChain in another tab; coming back within that time cancels the lock.</li>
       <li>Keys are <strong>hidden by default</strong>. Click "Show private keys" to reveal — they will be visible until you toggle back or lock the wallet.</li>
     </ul>
   </div>
@@ -50,7 +50,7 @@
   <div class="panel">
     <p>On first visit you get three choices:</p>
     <ul>
-      <li><strong>Create new wallet</strong>: pick 12-word or 24-word entropy, write down the mnemonic, confirm by re-typing the last word, set a password (and optionally a BIP39 passphrase).</li>
+      <li><strong>Create new wallet</strong>: pick 12-word or 24-word entropy, write down the mnemonic, confirm by re-typing three words it asks for at random positions, set a password (and optionally a BIP39 passphrase).</li>
       <li><strong>Import mnemonic</strong>: paste an existing 12/24-word BIP39 phrase, optionally provide a BIP39 passphrase, set a password.</li>
       <li><strong>Unlock</strong> (only if a vault already exists on this device).</li>
     </ul>
@@ -92,7 +92,7 @@
 
   <h2>Recovery sweep</h2>
   <div class="panel">
-    <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. Bitails serves the multi-address lookup.</p>
+    <p>If you've used multiple addresses under the same mnemonic, click <em>Scan first 50 addresses</em> to find UTXOs across the first 50 receive and 50 change addresses under your current preset. If your wallet used more addresses than that, choose a deeper scan (100, 200 or 500 per branch) under <em>Addresses per branch</em>; deeper scans take longer. To scan a different account, change the account number in the path settings first. Bitails serves the multi-address lookup.</p>
     <p>The <em>Send recovered coins to</em> field at the top of the panel sets where the sweep transactions go:</p>
     <ul>
       <li>Defaults to your <strong>current derived address</strong> (whatever the path panel above shows).</li>
@@ -105,7 +105,7 @@
 
   <h2>Export &amp; backup</h2>
   <div class="panel">
-    <p>The <em>Export mnemonic</em> panel re-asks for your password before revealing the mnemonic (so a casual onlooker can't read it). You can also download an encrypted backup file (<code>satofinder-vault-…json</code>) — useless without your password, safe to email or archive.</p>
+    <p>The <em>Export mnemonic</em> panel re-asks for your password before revealing the mnemonic (so a casual onlooker can't read it). You can also download an encrypted backup file (<code>satofinder-vault-…json</code>) — useless without your password, safe to email or archive. To use it, choose <em>Restore from backup file</em> on the start screen and enter the password it was made with; its recovery phrase is re-encrypted into this device's vault. Replacing an existing vault asks you to type REPLACE first. Backups from the Alternate UI use a different format and are restored there.</p>
   </div>
 
   <h2 id="alternate">Alternate UI</h2>
