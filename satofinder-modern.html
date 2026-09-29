@@ -25,7 +25,7 @@
   -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'none';
-    script-src 'sha256-Hr8ughZkBlaS2eXCTD0nmSd5RgRALDjrOO36VK4LMBI=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
+    script-src 'sha256-SU0jNZjM5Jp7RJkK1Rv89BKSRNM/v/tPYJ/IriimUlQ=' https://cdn.jsdelivr.net/npm/@smartledger/bsv@7.1.0/bsv.min.js;
     style-src 'unsafe-inline';
     img-src 'self' data:;
     connect-src https://api.whatsonchain.com https://ordinals.gorillapool.io;
@@ -519,7 +519,7 @@
   const WOC_UTXO_PAGE = 1000;      // UTXOs per /unspent/all page
   const WOC_UTXO_MAX_PAGES = 50;   // beyond this the listing is incomplete: fail
   const RETRY_ATTEMPTS = 4;
-  const ORDINALS_PAGE = 1000;     // GorillaPool rows per page (it caps at 1000)
+  const ORDINALS_PAGE = 1000;     // rows requested per page (the overlap paging doesn't rely on it)
   const ORDINALS_MAX_PAGES = 50;  // beyond this the scan is incomplete: refuse to spend
 
   const ENTROPY_TO_WORDS = { 128: 12, 160: 15, 192: 18, 224: 21, 256: 24 };
@@ -783,11 +783,14 @@
   // 503 is precisely the failure mode this exists to remove.
 
   const Tokens = {
+    // Checks the output's own data as well as its origin's, and treats any
+    // ordinal origin as protected: the indexer reports some real inscriptions
+    // with an origin outpoint but no data (plain sats have origin null).
     isProtected(txo) {
       if (!txo || typeof txo !== 'object') return false;
-      const data = txo.origin?.data;
-      if (!data) return false;
-      return !!(data.insc || data.bsv20 || data.lock);
+      const marked = (d) => !!(d && (d.insc || d.bsv20 || d.bsv21 || d.lock));
+      if (marked(txo.data) || marked(txo.origin?.data)) return true;
+      return typeof txo.origin?.outpoint === 'string' && txo.origin.outpoint.length > 0;
     },
 
     // Set of "txid:vout" for every protected UTXO at addr: every page of the
@@ -796,27 +799,50 @@
     async protectedSet(address) {
       const set = new Set();
       const outpointOf = (t) => {
-        if (typeof t.txid === 'string' && Number.isInteger(t.vout)) return `${t.txid}:${t.vout}`;
-        const m = typeof t.outpoint === 'string' && t.outpoint.match(/^([0-9a-f]{64})_(\d+)$/);
-        if (m) return `${m[1]}:${m[2]}`;
+        if (typeof t.txid === 'string' && /^[0-9a-fA-F]{64}$/.test(t.txid) && Number.isInteger(t.vout) && t.vout >= 0) return `${t.txid.toLowerCase()}:${t.vout}`;
+        const m = typeof t.outpoint === 'string' && t.outpoint.match(/^([0-9a-fA-F]{64})_(\d+)$/);
+        if (m) return `${m[1].toLowerCase()}:${Number(m[2])}`;
         throw new Error('Ordinal/token indexer returned an output without an outpoint — refusing to build.');
       };
+      // Each page after the first is requested one row back and must start with
+      // the previous page's last row; a scan ends only on a page with nothing new,
+      // confirmed by a second read that must come back empty. A capped, short or
+      // flaky page, or rows shifting because something was spent mid-scan, then
+      // block the spend instead of leaving a protected output unlisted.
       for (const bsv20 of [false, true]) {
-        for (let page = 0, offset = 0; ; page++) {
-          if (page >= ORDINALS_MAX_PAGES) {
-            throw new Error('Too many ordinal/token outputs to check completely. Refusing to build — cannot verify these UTXOs are safe to spend.');
+        const seen = new Set();
+        let offset = 0, previousLast = null, requests = 0;
+        const read = async (at) => {
+          if (requests++ >= ORDINALS_MAX_PAGES) {
+            throw new Error('Too many ordinal/token outputs to check completely. Refusing to build — cannot verify UTXOs are safe to spend.');
           }
           let raw;
-          try {
-            raw = await Net.gorillapool.unspent(address, offset, bsv20);
-          } catch (e) {
-            throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build a transaction — cannot verify these UTXOs are safe to spend.`);
+          try { raw = await Net.gorillapool.unspent(address, at, bsv20); }
+          catch (e) { throw new Error(`Ordinal/token indexer unavailable (${e.message}). Refusing to build a transaction — cannot verify UTXOs are safe to spend.`); }
+          if (!Array.isArray(raw) || raw.length > ORDINALS_PAGE) throw new Error('Ordinal/token indexer returned an unexpected response — refusing to build.');
+          return raw;
+        };
+        const inconsistent = () => new Error('The ordinal/token listing changed while it was being checked. Try again in a moment.');
+        for (;;) {
+          const raw = await read(previousLast === null ? offset : offset - 1);
+          let fresh = raw;
+          if (previousLast !== null) {
+            if (raw.length === 0 || outpointOf(raw[0]) !== previousLast) throw inconsistent();
+            fresh = raw.slice(1);
           }
-          if (!Array.isArray(raw)) throw new Error('Ordinal/token indexer returned an unexpected shape — refusing to build.');
-          // Everything the BSV-20 listing returns is a token output.
-          for (const txo of raw) if (bsv20 || Tokens.isProtected(txo)) set.add(outpointOf(txo));
-          if (raw.length < ORDINALS_PAGE) break;
-          offset += raw.length;
+          if (fresh.length === 0) {
+            if ((await read(offset)).length !== 0) throw inconsistent();
+            break;
+          }
+          for (const t of fresh) {
+            const key = outpointOf(t);
+            if (seen.has(key)) throw inconsistent();
+            seen.add(key);
+            // Everything the BSV-20 listing returns is a token output.
+            if (bsv20 || Tokens.isProtected(t)) set.add(key);
+          }
+          offset += fresh.length;
+          previousLast = outpointOf(raw[raw.length - 1]);
         }
       }
       return set;
