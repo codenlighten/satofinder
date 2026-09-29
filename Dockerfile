@@ -50,6 +50,14 @@ COPY security-headers.conf  /etc/nginx/snippets/security-headers.conf
 COPY --from=builder /out/index.html /out/satofinder-modern.html /out/help.html \
      /out/service-worker.js /out/manifest.json /out/logo2.png /usr/share/nginx/html/
 
+# The tarball stamps every file 1970-01-01 so it is reproducible, and nginx
+# builds its ETag and Last-Modified from mtime + size. With every mtime equal,
+# a release that leaves a page the same size (a version bump, a one-character
+# fix) keeps the old ETag, so a browser revalidating its cached copy gets 304
+# and keeps running the old code. Stamp the files when the image is built;
+# the layer is rebuilt whenever the copied files change.
+RUN touch /usr/share/nginx/html/*
+
 # nginx:alpine listens on 80 by default; CapRover/the reverse proxy upstream
 # terminates HTTPS.
 EXPOSE 80
